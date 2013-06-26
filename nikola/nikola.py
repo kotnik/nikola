@@ -27,17 +27,20 @@ from __future__ import print_function, unicode_literals
 from collections import defaultdict
 from copy import copy
 import glob
+import locale
 import os
 import sys
 try:
     from urlparse import urlparse, urlsplit, urljoin
 except ImportError:
     from urllib.parse import urlparse, urlsplit, urljoin  # NOQA
+import warnings
 
 import lxml.html
 from yapsy.PluginManager import PluginManager
+import pytz
 
-if os.getenv('DEBUG'):
+if os.getenv('NIKOLA_DEBUG'):
     import logging
     logging.basicConfig(level=logging.DEBUG)
 else:
@@ -51,6 +54,7 @@ from .plugin_categories import (
     LateTask,
     PageCompiler,
     Task,
+    TaskMultiplier,
     TemplateSystem,
 )
 
@@ -65,45 +69,69 @@ class Nikola(object):
 
     Takes a site config as argument on creation.
     """
+    EXTRA_PLUGINS = [
+        'planetoid',
+        'ipynb',
+        'local_search',
+        'render_mustache',
+    ]
 
     def __init__(self, **config):
         """Setup proper environment for running tasks."""
 
         self.global_data = {}
         self.posts_per_year = defaultdict(list)
+        self.posts_per_month = defaultdict(list)
         self.posts_per_tag = defaultdict(list)
+        self.post_per_file = {}
         self.timeline = []
         self.pages = []
         self._scanned = False
+        if not config:
+            self.configured = False
+        else:
+            self.configured = True
 
         # This is the default config
-        # TODO: fill it
         self.config = {
             'ADD_THIS_BUTTONS': True,
             'ANALYTICS': '',
             'ARCHIVE_PATH': "",
             'ARCHIVE_FILENAME': "archive.html",
             'CACHE_FOLDER': 'cache',
+            'CODE_COLOR_SCHEME': 'default',
             'COMMENTS_IN_GALLERIES': False,
             'COMMENTS_IN_STORIES': False,
             'CONTENT_FOOTER': '',
+            'CREATE_MONTHLY_ARCHIVE': False,
             'DATE_FORMAT': '%Y-%m-%d %H:%M',
             'DEFAULT_LANG': "en",
             'DEPLOY_COMMANDS': [],
+            'DISABLED_PLUGINS': (),
             'DISQUS_FORUM': 'nikolademo',
+            'ENABLED_EXTRAS': (),
+            'EXTRA_HEAD_DATA': '',
             'FAVICONS': {},
             'FILE_METADATA_REGEXP': None,
             'FILES_FOLDERS': {'files': ''},
             'FILTERS': {},
             'GALLERY_PATH': 'galleries',
+            'GZIP_FILES': False,
+            'GZIP_EXTENSIONS': ('.txt', '.htm', '.html', '.css', '.js', '.json'),
+            'HIDE_UNTRANSLATED_POSTS': False,
             'INDEX_DISPLAY_POST_COUNT': 10,
+            'INDEX_FILE': 'index.html',
             'INDEX_TEASERS': False,
             'INDEXES_TITLE': "",
             'INDEXES_PAGES': "",
             'INDEX_PATH': '',
             'LICENSE': '',
+            'LINK_CHECK_WHITELIST': [],
             'LISTINGS_FOLDER': 'listings',
+            'MARKDOWN_EXTENSIONS': ['fenced_code', 'codehilite'],
             'MAX_IMAGE_SIZE': 1280,
+            'MATHJAX_CONFIG': '',
+            'OLD_THEME_SUPPORT': True,
             'OUTPUT_FOLDER': 'output',
             'post_compilers': {
                 "rest": ('.txt', '.rst'),
@@ -119,6 +147,7 @@ class Nikola(object):
                 ("posts/*.txt", "posts", "post.tmpl", True),
                 ("stories/*.txt", "stories", "story.tmpl", False),
             ),
+            'PRETTY_URLS': False,
             'REDIRECTIONS': [],
             'RSS_LINK': None,
             'RSS_PATH': '',
@@ -126,16 +155,32 @@ class Nikola(object):
             'SEARCH_FORM': '',
             'SLUG_TAG_PATH': True,
             'STORY_INDEX': False,
+            'STRIP_INDEXES': False,
+            'SITEMAP_INCLUDE_FILELESS_DIRS': True,
             'TAG_PATH': 'categories',
             'TAG_PAGES_ARE_INDEXES': False,
             'THEME': 'site',
+            'THEME_REVEAL_CONGIF_SUBTHEME': 'sky',
+            'THEME_REVEAL_CONGIF_TRANSITION': 'cube',
             'THUMBNAIL_SIZE': 180,
             'USE_BUNDLES': True,
             'USE_CDN': False,
             'USE_FILENAME_AS_TITLE': True,
+            'TIMEZONE': None,
         }
 
         self.config.update(config)
+
+        # STRIP_INDEX_HTML config has been replaces with STRIP_INDEXES
+        # Port it if only the oldef form is there
+        if 'STRIP_INDEX_HTML' in config and 'STRIP_INDEXES' not in config:
+            print("WARNING: You should configure STRIP_INDEXES instead of STRIP_INDEX_HTML")
+            self.config['STRIP_INDEXES'] = config['STRIP_INDEX_HTML']
+
+        # PRETTY_URLS defaults to enabling STRIP_INDEXES unless explicitly disabled
+        if config.get('PRETTY_URLS', False) and 'STRIP_INDEXES' not in config:
+            self.config['STRIP_INDEXES'] = True
+
         self.config['TRANSLATIONS'] = self.config.get('TRANSLATIONS',
                                                       {self.config['DEFAULT_'
                                                       'LANG']: ''})
@@ -143,7 +188,22 @@ class Nikola(object):
         self.THEMES = utils.get_theme_chain(self.config['THEME'])
 
         self.MESSAGES = utils.load_messages(self.THEMES,
-                                            self.config['TRANSLATIONS'])
+                                            self.config['TRANSLATIONS'],
+                                            self.config['DEFAULT_LANG'])
+
+        # SITE_URL is required, but if the deprecated BLOG_URL
+        # is available, use it and warn
+        if 'SITE_URL' not in self.config:
+            if 'BLOG_URL' in self.config:
+                print("WARNING: You should configure SITE_URL instead of BLOG_URL")
+                self.config['SITE_URL'] = self.config['BLOG_URL']
+
+        self.default_lang = self.config['DEFAULT_LANG']
+        self.translations = self.config['TRANSLATIONS']
+
+        # BASE_URL defaults to SITE_URL
+        if 'BASE_URL' not in self.config:
+            self.config['BASE_URL'] = self.config.get('SITE_URL')
 
         self.plugin_manager = PluginManager(categories_filter={
             "Command": Command,
@@ -151,30 +211,62 @@ class Nikola(object):
             "LateTask": LateTask,
             "TemplateSystem": TemplateSystem,
             "PageCompiler": PageCompiler,
+            "TaskMultiplier": TaskMultiplier,
         })
         self.plugin_manager.setPluginInfoExtension('plugin')
-        self.plugin_manager.setPluginPlaces([
-            str(os.path.join(os.path.dirname(__file__), 'plugins')),
-            str(os.path.join(os.getcwd(), 'plugins')),
-        ])
+        if sys.version_info[0] == 3:
+            places = [
+                os.path.join(os.path.dirname(__file__), 'plugins'),
+                os.path.join(os.getcwd(), 'plugins'),
+            ]
+        else:
+            places = [
+                os.path.join(os.path.dirname(__file__), utils.sys_encode('plugins')),
+                os.path.join(os.getcwd(), utils.sys_encode('plugins')),
+            ]
+        self.plugin_manager.setPluginPlaces(places)
         self.plugin_manager.collectPlugins()
 
         self.commands = {}
         # Activate all command plugins
-        for pluginInfo in self.plugin_manager.getPluginsOfCategory("Command"):
-            self.plugin_manager.activatePluginByName(pluginInfo.name)
-            pluginInfo.plugin_object.set_site(self)
-            pluginInfo.plugin_object.short_help = pluginInfo.description
-            self.commands[pluginInfo.name] = pluginInfo.plugin_object
+        for plugin_info in self.plugin_manager.getPluginsOfCategory("Command"):
+            if (plugin_info.name in self.config['DISABLED_PLUGINS']
+                or (plugin_info.name in self.EXTRA_PLUGINS and
+                    plugin_info.name not in self.config['ENABLED_EXTRAS'])):
+                self.plugin_manager.removePluginFromCategory(plugin_info, "Command")
+                continue
+
+            self.plugin_manager.activatePluginByName(plugin_info.name)
+            plugin_info.plugin_object.set_site(self)
+            plugin_info.plugin_object.short_help = plugin_info.description
+            self.commands[plugin_info.name] = plugin_info.plugin_object
 
         # Activate all task plugins
-        for pluginInfo in self.plugin_manager.getPluginsOfCategory("Task"):
-            self.plugin_manager.activatePluginByName(pluginInfo.name)
-            pluginInfo.plugin_object.set_site(self)
+        for task_type in ["Task", "LateTask"]:
+            for plugin_info in self.plugin_manager.getPluginsOfCategory(task_type):
+                if (plugin_info.name in self.config['DISABLED_PLUGINS']
+                    or (plugin_info.name in self.EXTRA_PLUGINS and
+                        plugin_info.name not in self.config['ENABLED_EXTRAS'])):
+                    self.plugin_manager.removePluginFromCategory(plugin_info, task_type)
+                    continue
+                self.plugin_manager.activatePluginByName(plugin_info.name)
+                plugin_info.plugin_object.set_site(self)
 
-        for pluginInfo in self.plugin_manager.getPluginsOfCategory("LateTask"):
-            self.plugin_manager.activatePluginByName(pluginInfo.name)
-            pluginInfo.plugin_object.set_site(self)
+        # Activate all multiplier plugins
+        for plugin_info in self.plugin_manager.getPluginsOfCategory("TaskMultiplier"):
+            if (plugin_info.name in self.config['DISABLED_PLUGINS']
+                or (plugin_info.name in self.EXTRA_PLUGINS and
+                    plugin_info.name not in self.config['ENABLED_EXTRAS'])):
+                self.plugin_manager.removePluginFromCategory(plugin_info, task_type)
+                continue
+            self.plugin_manager.activatePluginByName(plugin_info.name)
+            plugin_info.plugin_object.set_site(self)
+
+        # Activate all required compiler plugins
+        for plugin_info in self.plugin_manager.getPluginsOfCategory("PageCompiler"):
+            if plugin_info.name in self.config["post_compilers"].keys():
+                self.plugin_manager.activatePluginByName(plugin_info.name)
+                plugin_info.plugin_object.set_site(self)
 
         # set global_context for template rendering
         self.GLOBAL_CONTEXT = {
@@ -182,6 +274,7 @@ class Nikola(object):
 
         self.GLOBAL_CONTEXT['messages'] = self.MESSAGES
         self.GLOBAL_CONTEXT['_link'] = self.link
+        self.GLOBAL_CONTEXT['set_locale'] = s_l
         self.GLOBAL_CONTEXT['rel_link'] = self.rel_link
         self.GLOBAL_CONTEXT['abs_link'] = self.abs_link
         self.GLOBAL_CONTEXT['exists'] = self.file_exists
@@ -195,22 +288,34 @@ class Nikola(object):
         self.GLOBAL_CONTEXT['use_bundles'] = self.config['USE_BUNDLES']
         self.GLOBAL_CONTEXT['use_cdn'] = self.config.get("USE_CDN")
         self.GLOBAL_CONTEXT['favicons'] = self.config['FAVICONS']
-        if 'date_format' not in self.GLOBAL_CONTEXT:
-            self.GLOBAL_CONTEXT['date_format'] = '%Y-%m-%d %H:%M'
-
+        self.GLOBAL_CONTEXT['date_format'] = self.config.get(
+            'DATE_FORMAT', '%Y-%m-%d %H:%M')
         self.GLOBAL_CONTEXT['blog_author'] = self.config.get('BLOG_AUTHOR')
         self.GLOBAL_CONTEXT['blog_title'] = self.config.get('BLOG_TITLE')
-        self.GLOBAL_CONTEXT['blog_url'] = self.config.get('BLOG_URL')
+
+        self.GLOBAL_CONTEXT['blog_url'] = self.config.get('SITE_URL', self.config.get('BLOG_URL'))
         self.GLOBAL_CONTEXT['blog_desc'] = self.config.get('BLOG_DESCRIPTION')
         self.GLOBAL_CONTEXT['analytics'] = self.config.get('ANALYTICS')
         self.GLOBAL_CONTEXT['translations'] = self.config.get('TRANSLATIONS')
         self.GLOBAL_CONTEXT['license'] = self.config.get('LICENSE')
         self.GLOBAL_CONTEXT['search_form'] = self.config.get('SEARCH_FORM')
         self.GLOBAL_CONTEXT['disqus_forum'] = self.config.get('DISQUS_FORUM')
-        self.GLOBAL_CONTEXT['content_footer'] = self.config.get('CONTENT_FOOTER')
+        self.GLOBAL_CONTEXT['mathjax_config'] = self.config.get(
+            'MATHJAX_CONFIG')
+        self.GLOBAL_CONTEXT['subtheme'] = self.config.get('THEME_REVEAL_CONGIF_SUBTHEME')
+        self.GLOBAL_CONTEXT['transition'] = self.config.get('THEME_REVEAL_CONGIF_TRANSITION')
+        self.GLOBAL_CONTEXT['content_footer'] = self.config.get(
+            'CONTENT_FOOTER')
         self.GLOBAL_CONTEXT['rss_path'] = self.config.get('RSS_PATH')
         self.GLOBAL_CONTEXT['rss_link'] = self.config.get('RSS_LINK')
-        self.GLOBAL_CONTEXT['sidebar_links'] = self.config.get('SIDEBAR_LINKS')
+
+        self.GLOBAL_CONTEXT['sidebar_links'] = utils.Functionary(list, self.config['DEFAULT_LANG'])
+        for k, v in self.config.get('SIDEBAR_LINKS', {}).items():
+            self.GLOBAL_CONTEXT['sidebar_links'][k] = v
+
+        self.GLOBAL_CONTEXT['twitter_card'] = self.config.get(
+            'TWITTER_CARD', {})
+        self.GLOBAL_CONTEXT['extra_head_data'] = self.config.get('EXTRA_HEAD_DATA')
 
         self.GLOBAL_CONTEXT.update(self.config.get('GLOBAL_CONTEXT', {}))
 
@@ -228,23 +333,30 @@ class Nikola(object):
         pi = self.plugin_manager.getPluginByName(
             template_sys_name, "TemplateSystem")
         if pi is None:
-            sys.stderr.write("Error loading %s template system plugin\n" %
-                             template_sys_name)
+            sys.stderr.write("Error loading {0} template system "
+                             "plugin\n".format(template_sys_name))
             sys.exit(1)
         self.template_system = pi.plugin_object
-        lookup_dirs = [os.path.join(utils.get_theme_path(name), "templates")
-                       for name in self.THEMES]
+        lookup_dirs = ['templates'] + [os.path.join(utils.get_theme_path(name), "templates")
+                                       for name in self.THEMES]
         self.template_system.set_directories(lookup_dirs,
                                              self.config['CACHE_FOLDER'])
+
+        # Check consistency of USE_CDN and the current THEME (Issue #386)
+        if self.config['USE_CDN']:
+            bootstrap_path = utils.get_asset_path(os.path.join(
+                'assets', 'css', 'bootstrap.min.css'), self.THEMES)
+            if bootstrap_path.split(os.sep)[-4] != 'site':
+                warnings.warn('The USE_CDN option may be incompatible with your theme, because it uses a hosted version of bootstrap.')
 
         # Load compiler plugins
         self.compilers = {}
         self.inverse_compilers = {}
 
-        for pluginInfo in self.plugin_manager.getPluginsOfCategory(
+        for plugin_info in self.plugin_manager.getPluginsOfCategory(
                 "PageCompiler"):
-            self.compilers[pluginInfo.name] = \
-                pluginInfo.plugin_object.compile_html
+            self.compilers[plugin_info.name] = \
+                plugin_info.plugin_object
 
     def get_compiler(self, source_name):
         """Get the correct compiler for a post from `conf.post_compilers`
@@ -267,12 +379,12 @@ class Nikola(object):
                     exit("Your file extension->compiler definition is"
                          "ambiguous.\nPlease remove one of the file extensions"
                          "from 'post_compilers' in conf.py\n(The error is in"
-                         "one of %s)" % ', '.join(langs))
+                         "one of {0})".format(', '.join(langs)))
                 elif len(langs) > 1:
                     langs = langs[:1]
                 else:
                     exit("post_compilers in conf.py does not tell me how to "
-                         "handle '%s' extensions." % ext)
+                         "handle '{0}' extensions.".format(ext))
 
             lang = langs[0]
             compile_html = self.compilers[lang]
@@ -288,16 +400,16 @@ class Nikola(object):
         data = self.template_system.render_template(
             template_name, None, local_context)
 
-        assert isinstance(output_name, bytes)
         assert output_name.startswith(
-            self.config["OUTPUT_FOLDER"].encode('utf8'))
-        url_part = output_name.decode('utf8')[len(self.config["OUTPUT_FOLDER"])
-                                              + 1:]
+            self.config["OUTPUT_FOLDER"])
+        url_part = output_name[len(self.config["OUTPUT_FOLDER"]) + 1:]
 
-        # This is to support windows paths
-        url_part = "/".join(url_part.split(os.sep))
-
-        src = urljoin(self.config["BLOG_URL"], url_part)
+        # Treat our site as if output/ is "/" and then make all URLs relative,
+        # making the site "relocatable"
+        src = os.sep + url_part
+        src = os.path.normpath(src)
+        # The os.sep is because normpath will change "/" to "\" on windows
+        src = "/".join(src.split(os.sep))
 
         parsed_src = urlsplit(src)
         src_elems = parsed_src.path.split('/')[1:]
@@ -354,7 +466,20 @@ class Nikola(object):
         with open(output_name, "wb+") as post_file:
             post_file.write(data)
 
-    def path(self, kind, name, lang, is_link=False):
+    def current_lang(self):  # FIXME: this is duplicated, turn into a mixin
+        """Return the currently set locale, if it's one of the
+        available translations, or default_lang."""
+        lang = utils.LocaleBorg().current_lang
+        if lang:
+            if lang in self.translations:
+                return lang
+            lang = lang.split('_')[0]
+            if lang in self.translations:
+                return lang
+        # whatever
+        return self.default_lang
+
+    def path(self, kind, name, lang=None, is_link=False):
         """Build the path to a certain kind of page.
 
         kind is one of:
@@ -379,11 +504,15 @@ class Nikola(object):
         (ex: "archive\\index.html")
         """
 
+        if lang is None:
+            lang = self.current_lang()
+
         path = []
 
         if kind == "tag_index":
             path = [_f for _f in [self.config['TRANSLATIONS'][lang],
-                                  self.config['TAG_PATH'], 'index.html'] if _f]
+                                  self.config['TAG_PATH'],
+                                  self.config['INDEX_FILE']] if _f]
         elif kind == "tag":
             if self.config['SLUG_TAG_PATH']:
                 name = utils.slugify(name)
@@ -400,14 +529,16 @@ class Nikola(object):
             if name not in [None, 0]:
                 path = [_f for _f in [self.config['TRANSLATIONS'][lang],
                                       self.config['INDEX_PATH'],
-                                      'index-%s.html' % name] if _f]
+                                      'index-{0}.html'.format(name)] if _f]
             else:
                 path = [_f for _f in [self.config['TRANSLATIONS'][lang],
-                                      self.config['INDEX_PATH'], 'index.html']
+                                      self.config['INDEX_PATH'],
+                                      self.config['INDEX_FILE']]
                         if _f]
         elif kind == "post_path":
             path = [_f for _f in [self.config['TRANSLATIONS'][lang],
-                                  os.path.dirname(name), "index.html"] if _f]
+                                  os.path.dirname(name),
+                                  self.config['INDEX_FILE']] if _f]
         elif kind == "rss":
             path = [_f for _f in [self.config['TRANSLATIONS'][lang],
                                   self.config['RSS_PATH'], 'rss.xml'] if _f]
@@ -415,19 +546,25 @@ class Nikola(object):
             if name:
                 path = [_f for _f in [self.config['TRANSLATIONS'][lang],
                                       self.config['ARCHIVE_PATH'], name,
-                                      'index.html'] if _f]
+                                      self.config['INDEX_FILE']] if _f]
             else:
                 path = [_f for _f in [self.config['TRANSLATIONS'][lang],
                                       self.config['ARCHIVE_PATH'],
                                       self.config['ARCHIVE_FILENAME']] if _f]
         elif kind == "gallery":
             path = [_f for _f in [self.config['GALLERY_PATH'], name,
-                                  'index.html'] if _f]
+                                  self.config['INDEX_FILE']] if _f]
         elif kind == "listing":
             path = [_f for _f in [self.config['LISTINGS_FOLDER'], name +
                                   '.html'] if _f]
         if is_link:
-            return '/' + ('/'.join(path))
+            link = '/' + ('/'.join(path))
+            index_len = len(self.config['INDEX_FILE'])
+            if self.config['STRIP_INDEXES'] and \
+                    link[-(1 + index_len):] == '/' + self.config['INDEX_FILE']:
+                return link[:-index_len]
+            else:
+                return link
         else:
             return os.path.join(*path)
 
@@ -436,13 +573,13 @@ class Nikola(object):
 
     def abs_link(self, dst):
         # Normalize
-        dst = urljoin(self.config['BLOG_URL'], dst)
+        dst = urljoin(self.config['BASE_URL'], dst)
 
         return urlparse(dst).path
 
     def rel_link(self, src, dst):
         # Normalize
-        src = urljoin(self.config['BLOG_URL'], src)
+        src = urljoin(self.config['BASE_URL'], src)
         dst = urljoin(src, dst)
         # Avoid empty links.
         if src == dst:
@@ -472,22 +609,31 @@ class Nikola(object):
             exists = os.stat(path).st_size > 0
         return exists
 
-    def gen_tasks(self):
+    def gen_tasks(self, name, plugin_category):
+
+        def flatten(task):
+            if isinstance(task, dict):
+                yield task
+            else:
+                for t in task:
+                    for ft in flatten(t):
+                        yield ft
+
         task_dep = []
-        for pluginInfo in self.plugin_manager.getPluginsOfCategory("Task"):
-            for task in pluginInfo.plugin_object.gen_tasks():
+        for pluginInfo in self.plugin_manager.getPluginsOfCategory(plugin_category):
+            for task in flatten(pluginInfo.plugin_object.gen_tasks()):
                 yield task
+                for multi in self.plugin_manager.getPluginsOfCategory("TaskMultiplier"):
+                    flag = False
+                    for task in multi.plugin_object.process(task, name):
+                        flag = True
+                        yield task
+                    if flag:
+                        task_dep.append('{0}_{1}'.format(name, multi.plugin_object.name))
             if pluginInfo.plugin_object.is_default:
                 task_dep.append(pluginInfo.plugin_object.name)
-
-        for pluginInfo in self.plugin_manager.getPluginsOfCategory("LateTask"):
-            for task in pluginInfo.plugin_object.gen_tasks():
-                yield task
-            if pluginInfo.plugin_object.is_default:
-                task_dep.append(pluginInfo.plugin_object.name)
-
         yield {
-            'name': b'all',
+            'name': name,
             'actions': None,
             'clean': True,
             'task_dep': task_dep
@@ -495,60 +641,89 @@ class Nikola(object):
 
     def scan_posts(self):
         """Scan all the posts."""
-        if not self._scanned:
-            print("Scanning posts", end='')
-            targets = set([])
-            for wildcard, destination, template_name, use_in_feeds in \
-                    self.config['post_pages']:
-                print(".", end='')
-                base_len = len(destination.split(os.sep))
-                dirname = os.path.dirname(wildcard)
-                for dirpath, _, _ in os.walk(dirname):
-                    dir_glob = os.path.join(dirpath,
-                                            os.path.basename(wildcard))
-                    dest_dir = os.path.join(*([destination] +
-                                              dirpath.split(
-                                                  os.sep)[base_len:]))
-                    for base_path in glob.glob(dir_glob):
-                        post = Post(
-                            base_path,
-                            self.config['CACHE_FOLDER'],
-                            dest_dir,
-                            use_in_feeds,
-                            self.config['TRANSLATIONS'],
-                            self.config['DEFAULT_LANG'],
-                            self.config['BLOG_URL'],
-                            self.MESSAGES,
-                            template_name,
-                            self.config['FILE_METADATA_REGEXP'])
-                        for lang, langpath in list(
-                                self.config['TRANSLATIONS'].items()):
-                            dest = (destination, langpath, dir_glob,
-                                    post.pagenames[lang])
-                            if dest in targets:
-                                raise Exception(
-                                    'Duplicated output path %r in post %r' %
-                                    (post.pagenames[lang], base_path))
-                            targets.add(dest)
-                        self.global_data[post.post_name] = post
-                        if post.use_in_feeds:
-                            self.posts_per_year[
-                                str(post.date.year)].append(post.post_name)
-                            for tag in post.tags:
-                                self.posts_per_tag[tag].append(post.post_name)
-                        else:
-                            self.pages.append(post)
-            for name, post in list(self.global_data.items()):
-                self.timeline.append(post)
-            self.timeline.sort(key=lambda p: p.date)
-            self.timeline.reverse()
-            post_timeline = [p for p in self.timeline if p.use_in_feeds]
-            for i, p in enumerate(post_timeline[1:]):
-                p.next_post = post_timeline[i]
-            for i, p in enumerate(post_timeline[:-1]):
-                p.prev_post = post_timeline[i + 1]
-            self._scanned = True
-            print("done!")
+        if self._scanned:
+            return
+
+        print("Scanning posts", end='')
+        tzinfo = None
+        if self.config['TIMEZONE'] is not None:
+            tzinfo = pytz.timezone(self.config['TIMEZONE'])
+        current_time = utils.current_time(tzinfo)
+        targets = set([])
+        for wildcard, destination, template_name, use_in_feeds in \
+                self.config['post_pages']:
+            print(".", end='')
+            dirname = os.path.dirname(wildcard)
+            for dirpath, _, _ in os.walk(dirname):
+                dir_glob = os.path.join(dirpath, os.path.basename(wildcard))
+                dest_dir = os.path.normpath(os.path.join(destination,
+                                            os.path.relpath(dirpath, dirname)))
+                full_list = glob.glob(dir_glob)
+                # Now let's look for things that are not in default_lang
+                for lang in self.config['TRANSLATIONS'].keys():
+                    lang_glob = dir_glob + "." + lang
+                    translated_list = glob.glob(lang_glob)
+                    for fname in translated_list:
+                        orig_name = os.path.splitext(fname)[0]
+                        if orig_name in full_list:
+                            continue
+                        full_list.append(orig_name)
+
+                for base_path in full_list:
+                    post = Post(
+                        base_path,
+                        self.config['CACHE_FOLDER'],
+                        dest_dir,
+                        use_in_feeds,
+                        self.config['TRANSLATIONS'],
+                        self.config['DEFAULT_LANG'],
+                        self.config['BASE_URL'],
+                        self.MESSAGES,
+                        template_name,
+                        self.config['FILE_METADATA_REGEXP'],
+                        self.config['STRIP_INDEXES'],
+                        self.config['INDEX_FILE'],
+                        tzinfo,
+                        current_time,
+                        self.config['HIDE_UNTRANSLATED_POSTS'],
+                        self.config['PRETTY_URLS'],
+                    )
+                    for lang, langpath in list(
+                            self.config['TRANSLATIONS'].items()):
+                        dest = (destination, langpath, dir_glob,
+                                post.meta[lang]['slug'])
+                        if dest in targets:
+                            raise Exception('Duplicated output path {0!r} '
+                                            'in post {1!r}'.format(
+                                                post.meta[lang]['slug'],
+                                                base_path))
+                        targets.add(dest)
+                    self.global_data[post.post_name] = post
+                    if post.use_in_feeds:
+                        self.posts_per_year[
+                            str(post.date.year)].append(post.post_name)
+                        self.posts_per_month[
+                            '{0}/{1:02d}'.format(post.date.year, post.date.month)].append(post.post_name)
+                        for tag in post.alltags:
+                            self.posts_per_tag[tag].append(post.post_name)
+                    else:
+                        self.pages.append(post)
+                    if self.config['OLD_THEME_SUPPORT']:
+                        post._add_old_metadata()
+                    self.post_per_file[post.destination_path(lang=lang)] = post
+                    self.post_per_file[post.destination_path(lang=lang, extension=post.source_ext())] = post
+
+        for name, post in list(self.global_data.items()):
+            self.timeline.append(post)
+        self.timeline.sort(key=lambda p: p.date)
+        self.timeline.reverse()
+        post_timeline = [p for p in self.timeline if p.use_in_feeds]
+        for i, p in enumerate(post_timeline[1:]):
+            p.next_post = post_timeline[i]
+        for i, p in enumerate(post_timeline[:-1]):
+            p.prev_post = post_timeline[i + 1]
+        self._scanned = True
+        print("done!")
 
     def generic_page_renderer(self, lang, post, filters):
         """Render post fragments to final HTML pages."""
@@ -565,8 +740,9 @@ class Nikola(object):
             context['enable_comments'] = True
         else:
             context['enable_comments'] = self.config['COMMENTS_IN_STORIES']
+        extension = self.get_compiler(post.source_path).extension()
         output_name = os.path.join(self.config['OUTPUT_FOLDER'],
-                                   post.destination_path(lang)).encode('utf8')
+                                   post.destination_path(lang, extension))
         deps_dict = copy(context)
         deps_dict.pop('post')
         if post.prev_post:
@@ -577,9 +753,11 @@ class Nikola(object):
         deps_dict['TRANSLATIONS'] = self.config['TRANSLATIONS']
         deps_dict['global'] = self.GLOBAL_CONTEXT
         deps_dict['comments'] = context['enable_comments']
+        if post:
+            deps_dict['post_translations'] = post.translated_to
 
         task = {
-            'name': output_name,
+            'name': os.path.normpath(output_name),
             'file_dep': deps,
             'targets': [output_name],
             'actions': [(self.render_template, [post.template_name,
@@ -594,9 +772,6 @@ class Nikola(object):
                                    template_name, filters, extra_context):
         """Renders pages with lists of posts."""
 
-        # This is a name on disk, has to be bytes
-        assert isinstance(output_name, bytes)
-
         deps = self.template_system.template_deps(template_name)
         for post in posts:
             deps += post.deps(lang)
@@ -609,11 +784,11 @@ class Nikola(object):
         context["nextlink"] = None
         context.update(extra_context)
         deps_context = copy(context)
-        deps_context["posts"] = [(p.titles[lang], p.permalink(lang)) for p in
+        deps_context["posts"] = [(p.meta[lang]['title'], p.permalink(lang)) for p in
                                  posts]
         deps_context["global"] = self.GLOBAL_CONTEXT
         task = {
-            'name': output_name,
+            'name': os.path.normpath(output_name),
             'targets': [output_name],
             'file_dep': deps,
             'actions': [(self.render_template, [template_name, output_name,
@@ -623,3 +798,14 @@ class Nikola(object):
         }
 
         return utils.apply_filters(task, filters)
+
+
+def s_l(lang):
+    """A set_locale that uses utf8 encoding and returns ''."""
+    utils.LocaleBorg().current_lang = lang
+    try:
+        locale.setlocale(locale.LC_ALL, (lang, "utf8"))
+    except Exception:
+        print("WARNING: could not set locale to {0}."
+              "This may cause some i18n features not to work.".format(lang))
+    return ''

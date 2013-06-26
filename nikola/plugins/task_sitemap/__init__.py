@@ -22,76 +22,135 @@
 # OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-from __future__ import print_function, absolute_import
+from __future__ import print_function, absolute_import, unicode_literals
+import codecs
+import datetime
 import os
-import sys
-import tempfile
+try:
+    from urlparse import urljoin, urlparse
+except ImportError:
+    from urllib.parse import urljoin, urlparse  # NOQA
 
 from nikola.plugin_categories import LateTask
 from nikola.utils import config_changed
 
-from nikola.plugins.task_sitemap import sitemap_gen
+
+header = """<?xml version="1.0" encoding="UTF-8"?>
+<urlset
+    xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9
+                        http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
+"""
+
+url_format = """ <url>
+  <loc>{0}</loc>
+  <lastmod>{1}</lastmod>
+  <priority>0.5000</priority>
+ </url>
+"""
+
+get_lastmod = lambda p: datetime.datetime.fromtimestamp(os.stat(p).st_mtime).isoformat().split('T')[0]
+
+
+def get_base_path(base):
+    u"""returns the path of a base URL if it contains one.
+
+    >>> get_base_path('http://some.site') == '/'
+    True
+    >>> get_base_path('http://some.site/') == '/'
+    True
+    >>> get_base_path('http://some.site/some/sub-path') == '/some/sub-path/'
+    True
+    >>> get_base_path('http://some.site/some/sub-path/') == '/some/sub-path/'
+    True
+    """
+    # first parse the base_url for some path
+    base_parsed = urlparse(base)
+
+    if not base_parsed.path:
+        sub_path = ''
+    else:
+        sub_path = base_parsed.path
+    if sub_path.endswith('/'):
+        return sub_path
+    else:
+        return sub_path + '/'
 
 
 class Sitemap(LateTask):
-    """Copy theme assets into output."""
+    """Generate google sitemap."""
 
     name = "sitemap"
 
     def gen_tasks(self):
-        if sys.version_info[0] == 3:
-            print("sitemap generation is not available for python 3")
-            yield {
-                'basename': 'sitemap',
-                'name': 'sitemap',
-                'actions': [],
-            }
-            return
         """Generate Google sitemap."""
         kw = {
-            "blog_url": self.site.config["BLOG_URL"],
+            "base_url": self.site.config["BASE_URL"],
+            "site_url": self.site.config["SITE_URL"],
             "output_folder": self.site.config["OUTPUT_FOLDER"],
+            "strip_indexes": self.site.config["STRIP_INDEXES"],
+            "index_file": self.site.config["INDEX_FILE"],
+            "sitemap_include_fileless_dirs": self.site.config["SITEMAP_INCLUDE_FILELESS_DIRS"],
+            "mapped_extensions": self.site.config.get('MAPPED_EXTENSIONS', ['.html', '.htm'])
         }
-        output_path = os.path.abspath(kw['output_folder'])
-        sitemap_path = os.path.join(output_path, "sitemap.xml.gz")
+        output_path = kw['output_folder']
+        sitemap_path = os.path.join(output_path, "sitemap.xml")
+        base_path = get_base_path(kw['base_url'])
+        locs = {}
 
-        def sitemap():
-            # Generate config
-            config_data = """<?xml version="1.0" encoding="UTF-8"?>
-    <site
-    base_url="%s"
-    store_into="%s"
-    verbose="1" >
-    <directory path="%s" url="%s" />
-    <filter action="drop" type="wildcard" pattern="*~" />
-    <filter action="drop" type="regexp" pattern="/\.[^/]*" />
-    </site>""" % (
-                kw["blog_url"],
-                sitemap_path,
-                output_path,
-                kw["blog_url"],
-            )
-            config_file = tempfile.NamedTemporaryFile(delete=False)
-            config_file.write(config_data.encode('utf8'))
-            config_file.close()
+        output = kw['output_folder']
+        base_url = kw['base_url']
+        mapped_exts = kw['mapped_extensions']
 
-            # Generate sitemap
-            sitemap = sitemap_gen.CreateSitemapFromFile(config_file.name, True)
-            if not sitemap:
-                sitemap_gen.output.Log('Configuration file errors -- exiting.',
-                                       0)
-            else:
-                sitemap.Generate()
-                sitemap_gen.output.Log('Number of errors: %d' %
-                                       sitemap_gen.output.num_errors, 1)
-                sitemap_gen.output.Log('Number of warnings: %d' %
-                                       sitemap_gen.output.num_warns, 1)
-            os.unlink(config_file.name)
+        def scan_locs():
+            for root, dirs, files in os.walk(output):
+                if not dirs and not files and not kw['sitemap_include_fileless_dirs']:
+                    continue  # Totally empty, not on sitemap
+                path = os.path.relpath(root, output)
+                # ignore the current directory.
+                path = (path.replace(os.sep, '/') + '/').replace('./', '')
+                lastmod = get_lastmod(root)
+                loc = urljoin(base_url, base_path + path)
+                if 'index.html' in files:  # Only map folders with indexes
+                    locs[loc] = url_format.format(loc, lastmod)
+                for fname in files:
+                    if kw['strip_indexes'] and fname == kw['index_file']:
+                        continue  # We already mapped the folder
+                    if os.path.splitext(fname)[-1] in mapped_exts:
+                        real_path = os.path.join(root, fname)
+                        path = os.path.relpath(real_path, output)
+                        post = self.site.post_per_file.get(path)
+                        if post and (post.is_draft or post.is_retired or post.publish_later):
+                            continue
+                        path = path.replace(os.sep, '/')
+                        lastmod = get_lastmod(real_path)
+                        loc = urljoin(base_url, base_path + path)
+                        locs[loc] = url_format.format(loc, lastmod)
 
-        yield {
+        def write_sitemap():
+            # Have to rescan, because files may have been added between
+            # task dep scanning and task execution
+            scan_locs()
+            with codecs.open(sitemap_path, 'wb+', 'utf8') as outf:
+                outf.write(header)
+                for k in sorted(locs.keys()):
+                    outf.write(locs[k])
+                outf.write("</urlset>")
+            return True
+
+        scan_locs()
+        task = {
             "basename": "sitemap",
+            "name": sitemap_path,
             "targets": [sitemap_path],
-            "actions": [(sitemap,)],
-            "uptodate": [config_changed(kw)],
+            "actions": [(write_sitemap,)],
+            "uptodate": [config_changed({1: kw, 2: locs})],
             "clean": True,
+            "task_dep": ["render_site"],
         }
+        yield task
+
+if __name__ == '__main__':
+    import doctest
+    doctest.testmod()

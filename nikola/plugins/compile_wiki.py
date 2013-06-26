@@ -22,7 +22,7 @@
 # OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-"""Implementation of compile_html based on textile."""
+"""Implementation of compile_html based on CreoleWiki."""
 
 import codecs
 import os
@@ -42,7 +42,7 @@ class CompileTextile(PageCompiler):
 
     name = "wiki"
 
-    def compile_html(self, source, dest):
+    def compile_html(self, source, dest, is_two_file=True):
         if creole is None:
             raise Exception('To build this site, you need to install the '
                             '"creole" package.')
@@ -57,14 +57,16 @@ class CompileTextile(PageCompiler):
             output = HtmlEmitter(document).emit()
             out_file.write(output)
 
-    def create_post(self, path, onefile=False, title="", slug="", date="",
-                    tags=""):
+    def create_post(self, path, onefile=False, **kw):
+        metadata = {}
+        metadata.update(self.default_metadata)
+        metadata.update(kw)
+        d_name = os.path.dirname(path)
+        if not os.path.isdir(d_name):
+            os.makedirs(os.path.dirname(path))
         if onefile:
             raise Exception('There are no comments in CreoleWiki markup, so '
                             'one-file format is not possible, use the -2 '
                             'option.')
-        d_name = os.path.dirname(path)
-        if not os.path.isdir(d_name):
-            os.makedirs(os.path.dirname(path))
         with codecs.open(path, "wb+", "utf8") as fd:
             fd.write("Write your post here.")

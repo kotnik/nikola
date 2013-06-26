@@ -1,8 +1,7 @@
 The Nikola Handbook
 ===================
 
-:Version: 5.2
-:Author: Roberto Alsina <ralsina@netmanagers.com.ar>
+:Version: 5.4.4
 
 .. class:: alert alert-info pull-right
 
@@ -12,12 +11,12 @@ The Nikola Handbook
 All You Need to Know
 --------------------
 
-After you have Nikola installed:
+After you have Nikola `installed <#installing-nikola>`_:
 
 Create a empty site:
     ``nikola init mysite``
 
-You can create a site with demo files in it with ``nikola init mysite --demo``
+You can create a site with demo files in it with ``nikola init --demo mysite``
 
 The rest of these commands have to be executed inside the new ``mysite`` folder.
 
@@ -84,7 +83,7 @@ Getting Help
 ------------
 
 * Feel free to contact me at ralsina@netmanagers.com.ar for questions about Nikola.
-* You can file bugs at `the issue tracker <http://code.google.com/p/nikola-generator/issues/list>`__
+* You can file bugs at `the issue tracker <https://github.com/ralsina/nikola/issues>`__
 * You can discuss Nikola at the `nikola-discuss google group <http://groups.google.com/group/nikola-discuss>`_
 * You can subscribe to `the Nikola Blog <http://nikola.ralsina.com.ar/blog>`_
 * You can follow `Nikola on Twitter <https://twitter.com/#!/nikolagenerator>`_
@@ -197,10 +196,10 @@ Longer version:
 #. Get `Nikola <http://nikola.ralsina.com.ar/>`_
 #. Install dependencies. To do that, either:
 
-   #. ``pip install -r requirements.txt`` or...
+   #. ``pip install -r requirements.txt`` and ``pip install .`` or...
    #. Install your distribution's packages for all the things
       mentioned below, if they exist, or...
-   #. Get all of these manually (but why?, use requirements.txt):
+   #. Get all of these manually (but why?, use pip):
 
       #. Get python, if you don't have it.
       #. Get `doit <http://pydoit.org>`_
@@ -220,10 +219,22 @@ After that, run ``nikola init --demo sitename`` and that will create a folder ca
 
 Nikola is packaged for some Linux distributions, you may get that instead.
 
+*NOTE*: If you get a ``ERROR: /bin/sh: 1: xslt-config: not found`` or ``fatal error:
+libxml/xmlversion.h: No such file or directory`` when running ``pip install -r requirements.txt``, install *libxml* and *libxslt* libraries, like so:
+
+Debian systems:
+
+    sudo apt-get install libxml2-dev
+    sudo apt-get install libxslt1-dev
+
+RHEL systems:
+
+    yum install libxslt-devel libxml2-devel
+
 Getting Started
 ---------------
 
-To create posts and pages in Nikola, you write them in one of the supported input formats. 
+To create posts and pages in Nikola, you write them in one of the supported input formats.
 Those source files are later converted to HTML
 The recommended formats are restructured text and Markdown, but there is also support
 for textile and WikiCreole and even for just writing HTML.
@@ -264,9 +275,9 @@ all the pages again, unless you changed something that the page requires. So, if
 the text of a post, or its title, that post page, and all index pages where it is mentioned,
 will be recreated. If you change the post page template, then all the post pages will be rebuilt.
 
-Nikola is mostly a series of doit *tasks*, and you can see them by doing ``nikola build list``::
+Nikola is mostly a series of doit *tasks*, and you can see them by doing ``nikola list``::
 
-    $ nikola build list
+    $ nikola list
     Scanning posts  . . done!
     build_bundles
     copy_assets
@@ -292,21 +303,32 @@ part of the site using task names, for example ``nikola build render_pages``, an
 Nikola also has other commands besides ``build``::
 
     $ nikola help
-    Usage: nikola command [options]
-
+    Nikola
     Available commands:
+      nikola auto            automatically execute tasks when a dependency changes
+      nikola bootswatch_theme                Given a swatch name and a parent theme, creates a custom theme.
+      nikola build           run tasks
+      nikola check           Check links and files in the generated site.
+      nikola clean           clean action / remove targets
+      nikola console                 A short explanation.
+      nikola deploy                  Deploy the site.
+      nikola dumpdb                  dump dependency DB
+      nikola forget                  clear successful run status from internal DB
+      nikola help            show help
+      nikola ignore                  ignore task (skip) on subsequent runs
+      nikola import_blogger                  Import a blogger dump.
+      nikola import_wordpress                Import a wordpress dump.
+      nikola init            Create a Nikola site in the specified folder.
+      nikola install_theme           Install theme into current site.
+      nikola list            list tasks from dodo file
+      nikola new_post                Create a new blog post or site page.
+      nikola run             run tasks
+      nikola serve           Start the test webserver.
+      nikola strace                  use strace to list file_deps and targets
 
-    nikola bootswatch_theme: Given a swatch name and a parent theme, creates a custom theme.
-    nikola build: Build the site.
-    nikola check: Check the generated site
-    nikola deploy: Deploy the site
-    nikola import_wordpress: Import a wordpress site from a XML dump (requires markdown).
-    nikola init: Create a new site.
-    nikola install_theme: Install a theme into the current site.
-    nikola new_post: Create a new post.
-    nikola serve: Start test server.
-
-    For detailed help for a command, use nikola command --help
+      nikola help              show help / reference
+      nikola help <command>    show command usage
+      nikola help <task-name>  show task usage
 
 The ``serve`` command starts a web server so you can see the site you are creating::
 
@@ -328,25 +350,24 @@ Example usage::
 Creating a Blog Post
 --------------------
 
-A post consists of two files, a metadata file (``post-title.meta``) and a
-file containing the contents written in  `restructured text <http://docutils.sf.net>`_
-(``post-title.txt``), markdown or HTML. Which input type is used is guessed using
-the ``post_compilers`` option in ``conf.py`` but by default, the extensions
-supported are:
+To create a new post, the easiest way is to run ``nikola new_post``. You  will
+be asked for a title for your post, and it will tell you where the post's file
+is located.
 
-.txt .rst
-    Restructured Text
+By default, that file will contain also some extra information about your post ("the metadata").
+It can be placed in a separate file by using the ``-2`` option, but it's generally
+easier to keep it in a single location.
 
-.md .markdown .mdown
-    Markdown
+The contents of your post have to be written (by default) in `restructured text <http://docutils.sf.net>`_
+but you can use a lot of different markups using the ``-f`` option. Currently
+Nikola supports bbcode, wiki, markdown, html, txt2tags and textile in addition
+to restructured text.
 
-.htm .html
-    HTML
-
-The default configuration expects them to be placed in ``posts`` but that can be
+You can control what markup compiler is used for each file extension with the ``post_compilers``
+option. The default configuration expects them to be placed in ``posts`` but that can be
 changed (see below, the post_pages option)
 
-You can just create them in ``posts`` or use a little helper task provided by Nikola::
+This is how it works::
 
     $ nikola new_post
     Creating New Post
@@ -363,19 +384,40 @@ The content of that file is as follows::
     .. tags:
     .. link:
     .. description:
+
     Write your post here.
 
-The first line is the title. The second one is the pagename. Since often titles will have
+The ``slug`` is the pagename. Since often titles will have
 characters that look bad on URLs, it's generated as a "clean" version of the title.
 The third line is the post's date, and is set to "now".
 
-You can add three more optional lines. A fourth line that is a list of tags
-separated with commas (spaces around the commas are ignored)::
+The other lines are optional. Tags are comma-separated. The ``link`` is an original
+source for the content, and ``description`` is mostly useful for SEO.
 
-    programming, python, fame, fortune
+You can add your own metadata fields in the same manner, if you use a theme that
+supports them (for example: ``.. author: John Doe``)
 
-A fifth line that's a URL for an original source of the post, and a sixth line
-that's the page description.
+.. sidebar:: Other Metadata Fields
+
+   Nikola will also use other metadata fields:
+
+   nocomments
+       Set to "True" to disable comments. Example::
+
+           .. nocomments: True
+
+   template
+       Will change the template used to render this page/post specific page. Example::
+
+           .. template: story.tmpl
+
+       That template needs to either be part of the theme, or be placed in a ``templates/``
+       folder inside your site.
+
+   password
+       The post will be encrypted and invisible until the reader enters the password.
+       Also, the post's sourcecode will not be available.
+
 
 .. note:: The Two-File Format
 
@@ -388,11 +430,11 @@ that's the page description.
         2012/09/15 19:52:05
 
 If you are writing a multilingual site, you can also create a per-language
-post file (for example: ``how-to-make-money.txt.es``). This one can have two
-lines of metadata:
+post file (for example: ``how-to-make-money.txt.es``). This one can replace
+metadata of the default language, for example:
 
-1) The translated title for the post or page
-2) A translated version of the pagename
+* The translated title for the post or page
+* A translated version of the pagename
 
 You can edit these files with your favourite text editor, and once you are happy
 with the contents, generate the pages as explained in `Getting Started`_
@@ -448,20 +490,21 @@ one in the list if all of them have it set to False.
 
 The ``new_post`` command supports some options::
 
-    $ nikola new_post --help
-    Usage: nikola new_post [options]
+    $ nikola help new_post
+    Purpose: Create a new blog post or site page.
+    Usage:   nikola new_post [options] [path]
 
     Options:
-    -h, --help            show this help message and exit
-    -p, --page            Create a page instead of a blog post.
-    -t TITLE, --title=TITLE
-                            Title for the page/post.
-    --tags=TAGS           Comma-separated tags for the page/post.
-    -1                    Create post with embedded metadata (single file
-                            format).
-    -f POST_FORMAT, --format=POST_FORMAT
-                            Format for post (rest or markdown)
+      -p, --page                Create a page instead of a blog post.
+      -t ARG, --title=ARG       Title for the page/post.
+      --tags=ARG                Comma-separated tags for the page/post.
+      -1                        Create post with embedded metadata (single file format)
+      -2                        Create post with separate metadata (two file format)
+      -f ARG, --format=ARG      Markup format for post, one of rest, markdown, wiki, bbcode, html, textile, txt2tags
 
+The optional ``path`` parameter tells nikola exactly where to put it instead of guessing from your config.
+So, if you do ``nikola new_post posts/random/foo.txt`` you will have a post in that path, with
+"foo" as its slug.
 
 Teasers
 ~~~~~~~
@@ -485,6 +528,11 @@ this behaviour with your ``conf.py``: ``INDEX_TEASERS`` defines whether index
 page should display the whole contents or only teasers. ``RSS_TEASERS``
 works the same way for your RSS feeds.
 
+By default, teasers will include a "read more" link at the end. If you want to
+change that text, you can use a custom teaser::
+
+    .. TEASER_END: click to read the rest of the article
+
 Drafts
 ~~~~~~
 
@@ -492,6 +540,15 @@ If you add a "draft" tag to a post, then it will not be shown in indexes and fee
 It *will* be compiled, and if you deploy it it *will* be made available, so use
 with care.
 
+Also if a post has a date in the future, it will not be shown in indexes until you rebuild after
+that date.
+
+Retired Posts
+~~~~~~~~~~~~~
+
+If you add a "retired" tag to a post, then it will not be shown in indexes and feeds.
+It *will* be compiled, and if you deploy it it *will* be made available, so it will
+not generate 404s for people who had linked to it.
 
 Creating a Page
 ---------------
@@ -540,64 +597,20 @@ commented, but just in case, here is a full,
 `customized example configuration <sampleconfig.html>`_ (the one I use for
 `my site <http://lateral.netmanagers.com.ar>`_)
 
-Adding Files
-------------
+You surely want to edit these options::
 
-Any files you want to be in ``output/`` but are not generated by Nikola (for example,
-``favicon.ico``, just put it in ``files/``. Everything there is copied into
-``output`` by the ``copy_files`` task. Remember that you can't have files that collide
-with files Nikola generates (it will give an error).
+    # Data about this site
+    BLOG_TITLE = "Demo Site"
+    SITE_URL = "http://nikola.ralsina.com.ar"
+    BLOG_EMAIL = "joe@demo.site"
+    BLOG_DESCRIPTION = "This is a demo site for Nikola."
 
-.. admonition:: Important
-
-   Don't put any files manually in ``output/``. Ever. Really. Maybe someday Nikola
-   will just wipe ``output/`` and then you will be sorry. So, please don't do that.
-
-If you want to copy more than one folder of static files into ``output`` you can
-change the FILES_FOLDERS option::
-
-    # One or more folders containing files to be copied as-is into the output.
-    # The format is a dictionary of "source" "relative destination".
-    # Default is:
-    # FILES_FOLDERS = {'files': '' }
-    # Which means copy 'files' into 'output'
-
-Post Processing Filters
------------------------
-
-You can apply post processing to the files in your site, in order to optimize them
-or change them in arbitrary ways. For example, you may want to compress all CSS
-and JS files using yui-compressor.
-
-To do that, you can use the provided helper adding this in your ``config.py``::
-
-  from nikola import filters
-
-  FILTERS = {
-    ".css": [filters.yui_compressor],
-    ".js": [filters.yui_compressor],
-  }
-
-Where ``filters.yui_compressor`` is a helper function provided by Nikola. You can
-replace that with strings describing command lines, or arbitrary python functions.
-
-If there's any specific thing you expect to be generally useful as a filter, contact
-me and I will add it to the filters library so that more people use it.
 
 Customizing Your Site
 ---------------------
 
 There are lots of things you can do to personalize your website, but let's see
 the easy ones!
-
-Basics
-    You can assume this needs to be changed::
-
-        # Data about this site
-        BLOG_TITLE = "Demo Site"
-        BLOG_URL = "http://nikola.ralsina.com.ar"
-        BLOG_EMAIL = "joe@demo.site"
-        BLOG_DESCRIPTION = "This is a demo site for Nikola."
 
 CSS tweaking
     The default configuration includes a file, ``themes/default/assets/css/custom.css``
@@ -630,6 +643,29 @@ Analytics
     a HTML snippet that will be added at the bottom of body. The main usage is
     a Google analytics snippet or something similar, but you can really put anything
     there.
+
+
+Adding Files
+------------
+
+Any files you want to be in ``output/`` but are not generated by Nikola (for example,
+``favicon.ico``, just put it in ``files/``. Everything there is copied into
+``output`` by the ``copy_files`` task. Remember that you can't have files that collide
+with files Nikola generates (it will give an error).
+
+.. admonition:: Important
+
+   Don't put any files manually in ``output/``. Ever. Really. Maybe someday Nikola
+   will just wipe ``output/`` and then you will be sorry. So, please don't do that.
+
+If you want to copy more than one folder of static files into ``output`` you can
+change the FILES_FOLDERS option::
+
+    # One or more folders containing files to be copied as-is into the output.
+    # The format is a dictionary of "source" "relative destination".
+    # Default is:
+    # FILES_FOLDERS = {'files': '' }
+    # Which means copy 'files' into 'output'
 
 Getting More Themes
 -------------------
@@ -711,6 +747,10 @@ Disqus is a good option because:
 3) It's free.
 4) It's damn nice.
 
+You can disable comments for a post by adding a "nocomments" metadata field to it::
+
+    .. nocomments: True
+
 .. admonition:: Important
 
    In some cases, when you run the test site, you won't see the comments.
@@ -753,6 +793,28 @@ be stripped. For example ``03_an_amazing_sunrise.jpg`` will be render as *An ama
 Here is a `demo gallery </galleries/demo>`_ of historic, public domain Nikola
 Tesla pictures taken from `this site <http://kerryr.net/pioneers/gallery/tesla.htm>`_.
 
+Post Processing Filters
+-----------------------
+
+You can apply post processing to the files in your site, in order to optimize them
+or change them in arbitrary ways. For example, you may want to compress all CSS
+and JS files using yui-compressor.
+
+To do that, you can use the provided helper adding this in your ``config.py``::
+
+  from nikola import filters
+
+  FILTERS = {
+    ".css": [filters.yui_compressor],
+    ".js": [filters.yui_compressor],
+  }
+
+Where ``filters.yui_compressor`` is a helper function provided by Nikola. You can
+replace that with strings describing command lines, or arbitrary python functions.
+
+If there's any specific thing you expect to be generally useful as a filter, contact
+me and I will add it to the filters library so that more people use it.
+
 Optimizing Your Website
 -----------------------
 
@@ -770,6 +832,9 @@ different ones, or about other webservers, please share!
 #. If even after you did the previous step the CSS files are not sent compressed::
 
       AddType text/css .css
+
+#. Optionally you can greate static compressed copies and save some CPU on your server
+   with the GZIP_FILES option in Nikola.
 
 #. The webassets Nikola plugin can drastically decrease the number of CSS and JS files your site fetches.
 
@@ -797,7 +862,7 @@ Once you have that, all you need to do is::
     .. youtube:: 8N_tupPBtWQ
 
 Vimeo
-~~~~~~~
+~~~~~
 
 To link to a vimeo video, you need the id of the video. For example, if the
 URL of the video is http://www.vimeo.com/20241459 then the id is **20241459**
@@ -812,26 +877,35 @@ the embedded player will be set to the native height and width of the video.
 You can override this if you wish::
 
     .. vimeo:: 20241459
-        height=240
-        width=320
+       :height: 240
+       :width: 320
 
-
-code-block
+Soundcloud
 ~~~~~~~~~~
 
-This is a somewhat complicated directive to display code nicely. You can just
-embed code like this::
+This directive lets you share music from http://soundcloud.com You first need to get the
+ID for the piece, which you can find in the "share" link. For example, if the
+Wordpress code starts like this::
 
-    .. code-block:: python
+    [soundcloud url="http://api.soundcloud.com/tracks/78131362"
 
-        print "Hello World!"
+The ID is 78131362 and you can embed the audio with this::
 
-Or you can include the code from a file::
+    .. soundcloud:: 78131362
 
-    .. code-block:: python
-       :include: /foo/bar/baz.py
+Code
+~~~~
 
-listing
+The ``code`` directive has been included in docutils since version 0.9 and now
+replaces Nikola's ``code-block`` directive. To ease the transition, two aliases
+for ``code`` directive are provided: ``code-block`` and ``sourcecode``::
+
+    .. code:: python
+       :number-lines:
+
+       print("Our virtues and our failings are inseparable")
+
+Listing
 ~~~~~~~
 
 To use this, you have to put your source code files inside ``listings`` or whatever your
@@ -842,27 +916,22 @@ To use this, you have to put your source code files inside ``listings`` or whate
 Will include the source code from ``foo.py``, highlight its syntax in python mode,
 and also create a ``listings/foo.py.html`` page and the listing will have a title linking to it.
 
-Advanced Code Options
-~~~~~~~~~~~~~~~~~~~~~
-
-Both code-block and listing support a number of options, including these:
+Listings support a few extra options so that you can display a fragment instead of the whole
+file in a document:
 
 start-at
-    A string, the diplayed code will start when it finds this
+    Takes a string, and starts displaying the code at the first line that matches it.
+start-before
+    Takes a string, and starts displaying the code right before the first line that matches it.
 end-at
-    A string, the diplayed code will end when it finds this
-start-after
-    A string, the diplayed code will start in the line after this
+    Takes a string, and stops displaying the code at the first line that matches it.
 end-before
-    A string, the diplayed code will end in the line before this
-linenos
-    Display line numbers
-linenos_offset
-    Use the original file's line numbers (warning: broken)
-tab-width
-    Size of the tabs (default 4)
+    Takes a string, and stops displaying the code right before the first line that matches it.
 
-gist
+If you set start-at and start-before, start-at wins. If you set end-at and end-before, end-at wins.
+If you make it so your listing ends before it starts, it's frowned upon and nothing will be shown.
+
+Gist
 ~~~~
 
 You can easily embed GitHub gists with this directive, like this::
@@ -880,23 +949,14 @@ Slideshows
 
 To create an image slideshow, you can use the ``slides`` directive. For example::
 
-    .. slides::     
-       :preload:
-       :play: 350
-        
+    .. slides::
+
        /galleries/demo/tesla_conducts_lg.jpg
        /galleries/demo/tesla_lightning2_lg.jpg
        /galleries/demo/tesla4_lg.jpg
        /galleries/demo/tesla_lightning1_lg.jpg
        /galleries/demo/tesla_tower1_lg.jpg
 
-This is based on `slidejs <http://slidesjs.com/>`_ and it supports 
-`the options described there <http://slidesjs.com/#options>`_ with one minor tweak to make them
-fit in docutils convention: If the option takes a boolean value, you just have to add it or not. For example,
-to enable preloading, just use the ``:preload:`` option.
-
-If the option takes any other kind of argument, just use it after the option, like ``play`` in the 
-above example.
 
 Importing Your Wordpress Site Into Nikola
 -----------------------------------------
@@ -905,7 +965,7 @@ If you like Nikola, and want to start using it, but you have a Wordpress blog, N
 supports importing it. Here's the steps to do it:
 
 1) Get a XML dump of your site [#]_
-2) nikola import_wordpress -f mysite.wordpress.2012-12-20.xml
+2) nikola import_wordpress mysite.wordpress.2012-12-20.xml
 
 After some time, this will crate a ``new_site`` folder with all your data. It currently supports
 the following:
@@ -918,14 +978,14 @@ the following:
 * Will give you a url_map so you know where each old post was
 
   This is also useful for Disqus thread migration!
-  
+
 * Will try to convert the content of your posts. This is *not* error free, because
   wordpress uses some unholy  mix of HTML and strange things. Currently we are treating it
   as markdown, which does a reasonabe job of it.
-  
-  You will find your old posts in ``new_site/posts/post-title.wp`` in case you need to fix 
+
+  You will find your old posts in ``new_site/posts/post-title.wp`` in case you need to fix
   any of them.
-  
+
 This feature is a work in progress, and the only way to improve it is to have it used for
 as many sites as possible and make it work better each time, so I am happy to get requests
 about it.
@@ -943,12 +1003,139 @@ Importing To A Custom Location Or Into An Existing Site
 It is possible to either import into a location you desire or into an already existing Nikola site.
 To do so you can specify a location after the dump.::
 
-    $ nikola import_wordpress -f mysite.wordpress.2012-12-20.xml -o import_location
+    $ nikola import_wordpress  mysite.wordpress.2012-12-20.xml -o import_location
 
 With this command Nikola will import into the folder ``import_location``.
 
 If the folder already exists Nikola will not overwrite an existing ``conf.py``.
 Instead a new file with a timestamp at the end of the filename will be created.
+
+Using Twitter Cards
+-------------------
+
+Twitter Cards enable you to show additional information in Tweets that link
+to you content.
+Nikola supports `Twitter Cards <https://dev.twitter.com/docs/cards>`_.
+They are implemented to use *Open Graph* tags whenever possible.
+
+.. admonition:: Important
+
+    To use Twitter Cards you need to opt-in on Twitter.
+    To do so please use the form that can be found at https://dev.twitter.com/form/participate-twitter-cards
+
+To enable and configure your use of Twitter Cards please modify the
+corresponding lines in your ``conf.py``.
+An example configuration that uses the Twitter nickname of the website
+and the authors Twitter user ID is found below.
+
+.. code-block:: python
+
+    TWITTER_CARD = {
+        'use_twitter_cards': True,  # enable Twitter Cards / Open Graph
+        'site': '@website',  # twitter nick for the website
+        # 'site:id': 123456,  # Same as site, but the website's Twitter user ID instead.
+        # 'creator': '@username',  # Username for the content creator / author.
+        'creator:id': 654321,  # Same as creator, but the Twitter user's ID.
+    }
+
+
+Extra Plugins
+-------------
+
+These are plugins that may not be widely used or that are a bit too radical or
+experimental for the general public.
+
+To enable them for your site please look for `ENABLED_EXTRAS` in your ``conf.py``.
+
+Planetoid
+~~~~~~~~~
+
+This plugin converts Nikola into the equivalent of `Planet <http://www.planetplanet.org/>`_
+a feed aggregator. It requires `PeeWee <https://github.com/coleifer/peewee>`_ and
+`Feedparser <http://code.google.com/p/feedparser/>`_ to work.
+
+It has a configuration option: PLANETOID_REFRESH which is the number of minutes
+before retrying a feed (defaults to 60).
+
+You need to create a ``feeds`` file containing the data of which feeds you want to
+aggregate. The format is very simple::
+
+   # Roberto Alsina
+   http://feeds2.feedburner.com/PostsInLateralOpinionAboutPython
+   Roberto Alsina
+
+#. Lines that start with ``#`` are comments and ignored.
+#. Lines that start with http are feed URLs.
+#. URL lines have to be followed by the "real name" of the feed.
+
+After all that is in place, just run ``nikola build`` and you'll get
+a planet.
+If you run ``nikola build`` for the first time you need to actually issue
+the command three times until the planet is build.
+
+There is a special theme for the planets called `site-planetoid`. To use
+this set `THEME` in your ``conf.py`` to ``'site-planetoid'``.
+This is special in the case that it redirects users to the original URL of the post
+when they try to open a post.
+
+Local Search
+~~~~~~~~~~~~
+
+If you don't want to depend on google or duckduckgo to implement search for you,
+or just want it to wok even if you are offline, enable this plugin and the
+search will be performed client side.
+
+This plugin implements a Tipue-based local search for your site.
+
+To use it, enable local_search in ENABLED_EXTRAS in your sites conf.py
+
+After you build your site, you will have several new files in assets/css and assets/js
+and a tipue_search.html that you can use as a basis for using this in your site.
+
+For more information about how to customize it and use it, please refer to the tipue
+docs at http://www.tipue.com/search/
+
+Tipue is under an MIT license (see MIT-LICENSE.txt)
+
+Here's a set of example settings for conf.py that should work nicely with the "site" theme::
+
+    SEARCH_FORM = """
+    <span class="navbar-form pull-left">
+    <input type="text" id="tipue_search_input">
+    </span>"""
+
+    ANALYTICS = """
+    <script type="text/javascript" src="/assets/js/tipuesearch_set.js"></script>
+    <script type="text/javascript" src="/assets/js/tipuesearch.js"></script>
+    <script type="text/javascript">
+    $(document).ready(function() {
+        $('#tipue_search_input').tipuesearch({
+            'mode': 'json',
+            'contentLocation': '/assets/js/tipuesearch_content.json',
+            'showUrl': false
+        });
+    });
+    </script>
+    """
+
+    EXTRA_HEAD_DATA = """
+    <link rel="stylesheet" type="text/css" href="/assets/css/tipuesearch.css">
+    <div id="tipue_search_content" style="margin-left: auto; margin-right: auto; padding: 20px;"></div>
+    """
+
+    ENABLED_EXTRAS = [ 'local_search' ]
+
+
+The <div> in EXTRA_HEAD_DATA is a hack but it will migrate into the <body> of the
+documents thanks to magic, and will hold the search results after the user searches.
+
+Mustache
+~~~~~~~~
+
+This task gives you a ``mustache.html`` file which lets you access your whole
+blog without reloading the page, using client-side templates. Makes it much
+faster and modern ;-)
+
 
 License
 -------

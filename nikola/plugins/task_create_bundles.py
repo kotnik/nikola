@@ -22,6 +22,8 @@
 # OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+from __future__ import unicode_literals
+
 import os
 
 try:
@@ -51,6 +53,9 @@ class BuildBundles(LateTask):
             'output_folder': self.site.config['OUTPUT_FOLDER'],
             'cache_folder': self.site.config['CACHE_FOLDER'],
             'theme_bundles': get_theme_bundles(self.site.THEMES),
+            'themes': self.site.THEMES,
+            'files_folders': self.site.config['FILES_FOLDERS'],
+            'code_color_scheme': self.site.config['CODE_COLOR_SCHEME'],
         }
 
         def build_bundle(output, inputs):
@@ -74,12 +79,12 @@ class BuildBundles(LateTask):
             for name, files in kw['theme_bundles'].items():
                 output_path = os.path.join(kw['output_folder'], name)
                 dname = os.path.dirname(name)
-                file_dep = [os.path.join('output', dname, fname) for fname in
-                            files]
-                # Need to filter custom.css if it's not there so doit doesn't
-                # refuse to do this task. FIXME
-                file_dep = [f for f in file_dep if not f.endswith('custom.css')]
-
+                file_dep = [utils.get_asset_path(
+                    os.path.join(dname, fname), kw['themes'],
+                    kw['files_folders'])
+                    for fname in files
+                ]
+                file_dep = filter(None, file_dep)  # removes missing files
                 task = {
                     'file_dep': file_dep,
                     'basename': str(self.name),

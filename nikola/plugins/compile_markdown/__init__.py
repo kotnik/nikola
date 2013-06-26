@@ -24,14 +24,28 @@
 
 """Implementation of compile_html based on markdown."""
 
+from __future__ import unicode_literals
+
 import codecs
 import os
-import re
 
 try:
     from markdown import markdown
+
+    from nikola.plugins.compile_markdown.mdx_nikola import NikolaExtension
+    nikola_extension = NikolaExtension()
+
+    from nikola.plugins.compile_markdown.mdx_gist import GistExtension
+    gist_extension = GistExtension()
+
+    from nikola.plugins.compile_markdown.mdx_podcast import PodcastExtension
+    podcast_extension = PodcastExtension()
+
 except ImportError:
     markdown = None  # NOQA
+    nikola_extension = None
+    gist_extension = None
+    podcast_extension = None
 
 from nikola.plugin_categories import PageCompiler
 
@@ -40,8 +54,10 @@ class CompileMarkdown(PageCompiler):
     """Compile markdown into HTML."""
 
     name = "markdown"
+    extensions = [gist_extension, nikola_extension, podcast_extension]
+    site = None
 
-    def compile_html(self, source, dest):
+    def compile_html(self, source, dest, is_two_file=True):
         if markdown is None:
             raise Exception('To build this site, you need to install the '
                             '"markdown" package.')
@@ -49,31 +65,26 @@ class CompileMarkdown(PageCompiler):
             os.makedirs(os.path.dirname(dest))
         except:
             pass
+        self.extensions += self.site.config.get("MARKDOWN_EXTENSIONS")
         with codecs.open(dest, "w+", "utf8") as out_file:
             with codecs.open(source, "r", "utf8") as in_file:
                 data = in_file.read()
-            output = markdown(data, ['fenced_code', 'codehilite'])
-            # h1 is reserved for the title so increment all header levels
-            for n in reversed(range(1, 9)):
-                output = re.sub('<h%i>' % n, '<h%i>' % (n + 1), output)
-                output = re.sub('</h%i>' % n, '</h%i>' % (n + 1), output)
-            # python-markdown's highlighter uses the class 'codehilite' to wrap
-            # code, # instead of the standard 'code'. None of the standard
-            # pygments stylesheets use this class, so swap it to be 'code'
-            output = re.sub(r'(<div[^>]+class="[^"]*)codehilite([^>]+)',
-                            r'\1code\2', output)
+            if not is_two_file:
+                data = data.split('\n\n', 1)[-1]
+            output = markdown(data, self.extensions)
             out_file.write(output)
 
-    def create_post(self, path, onefile=False, title="", slug="", date="",
-                    tags=""):
+    def create_post(self, path, onefile=False, **kw):
+        metadata = {}
+        metadata.update(self.default_metadata)
+        metadata.update(kw)
+        d_name = os.path.dirname(path)
+        if not os.path.isdir(d_name):
+            os.makedirs(os.path.dirname(path))
         with codecs.open(path, "wb+", "utf8") as fd:
             if onefile:
                 fd.write('<!-- \n')
-                fd.write('.. title: %s\n' % title)
-                fd.write('.. slug: %s\n' % slug)
-                fd.write('.. date: %s\n' % date)
-                fd.write('.. tags: %s\n' % tags)
-                fd.write('.. link: \n')
-                fd.write('.. description: \n')
+                for k, v in metadata.items():
+                    fd.write('.. {0}: {1}\n'.format(k, v))
                 fd.write('-->\n\n')
-            fd.write("\nWrite your post here.")
+            fd.write("Write your post here.")

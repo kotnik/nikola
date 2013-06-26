@@ -23,8 +23,13 @@
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 from __future__ import print_function
-from optparse import OptionParser
+from ast import literal_eval
+import codecs
+from datetime import datetime
 import os
+import subprocess
+import time
+
 
 from nikola.plugin_categories import Command
 
@@ -33,9 +38,35 @@ class Deploy(Command):
     """Deploy site.  """
     name = "deploy"
 
-    def run(self, *args):
-        parser = OptionParser(usage="nikola %s [options]" % self.name)
-        (options, args) = parser.parse_args(list(args))
+    doc_usage = ""
+    doc_purpose = "Deploy the site."
+
+    def _execute(self, command, args):
+        # Get last succesful deploy date
+        timestamp_path = os.path.join(self.site.config['CACHE_FOLDER'], 'lastdeploy')
+        if self.site.config['DISQUS_FORUM'] == 'nikolademo':
+            print("\nWARNING WARNING WARNING WARNING\n"
+                  "You are deploying using the nikolademo Disqus account.\n"
+                  "That means you will not be able to moderate the comments in your own site.\n"
+                  "And is probably not what you want to do.\n"
+                  "Think about it for 5 seconds, I'll wait :-)\n\n")
+            time.sleep(5)
         for command in self.site.config['DEPLOY_COMMANDS']:
+            try:
+                with open(timestamp_path, 'rb') as inf:
+                    last_deploy = literal_eval(inf.read().strip())
+            except Exception:
+                last_deploy = datetime(1970, 1, 1)  # NOQA
+
             print("==>", command)
-            os.system(command)
+            ret = subprocess.check_call(command, shell=True)
+            if ret != 0:  # failed deployment
+                raise Exception("Failed deployment")
+        print("Successful deployment")
+        new_deploy = datetime.now()
+        # Store timestamp of successful deployment
+        with codecs.open(timestamp_path, 'wb+', 'utf8') as outf:
+            outf.write(repr(new_deploy))
+        # Here is where we would do things with whatever is
+        # on self.site.timeline and is newer than
+        # last_deploy

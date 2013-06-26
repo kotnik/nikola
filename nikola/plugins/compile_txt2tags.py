@@ -46,7 +46,7 @@ class CompileTextile(PageCompiler):
 
     name = "txt2tags"
 
-    def compile_html(self, source, dest):
+    def compile_html(self, source, dest, is_two_file=True):
         if txt2tags is None:
             raise Exception('To build this site, you need to install the '
                             '"txt2tags" package.')
@@ -57,19 +57,17 @@ class CompileTextile(PageCompiler):
         cmd = ["-t", "html", "--no-headers", "--outfile", dest, source]
         txt2tags(cmd)
 
-    def create_post(self, path, onefile=False, title="", slug="", date="",
-                    tags=""):
+    def create_post(self, path, onefile=False, **kw):
+        metadata = {}
+        metadata.update(self.default_metadata)
+        metadata.update(kw)
         d_name = os.path.dirname(path)
         if not os.path.isdir(d_name):
             os.makedirs(os.path.dirname(path))
         with codecs.open(path, "wb+", "utf8") as fd:
             if onefile:
                 fd.write("\n'''\n<!--\n")
-                fd.write('.. title: %s\n' % title)
-                fd.write('.. slug: %s\n' % slug)
-                fd.write('.. date: %s\n' % date)
-                fd.write('.. tags: %s\n' % tags)
-                fd.write('.. link: \n')
-                fd.write('.. description: \n')
+                for k, v in metadata.items():
+                    fd.write('.. {0}: {1}\n'.format(k, v))
                 fd.write("-->\n'''\n")
             fd.write("\nWrite your post here.")

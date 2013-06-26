@@ -40,7 +40,7 @@ class CompileTextile(PageCompiler):
 
     name = "textile"
 
-    def compile_html(self, source, dest):
+    def compile_html(self, source, dest, is_two_file=True):
         if textile is None:
             raise Exception('To build this site, you need to install the '
                             '"textile" package.')
@@ -51,22 +51,22 @@ class CompileTextile(PageCompiler):
         with codecs.open(dest, "w+", "utf8") as out_file:
             with codecs.open(source, "r", "utf8") as in_file:
                 data = in_file.read()
+            if not is_two_file:
+                data = data.split('\n\n', 1)[-1]
             output = textile(data, head_offset=1)
             out_file.write(output)
 
-    def create_post(self, path, onefile=False, title="", slug="", date="",
-                    tags=""):
+    def create_post(self, path, onefile=False, **kw):
+        metadata = {}
+        metadata.update(self.default_metadata)
+        metadata.update(kw)
         d_name = os.path.dirname(path)
         if not os.path.isdir(d_name):
             os.makedirs(os.path.dirname(path))
         with codecs.open(path, "wb+", "utf8") as fd:
             if onefile:
                 fd.write('<notextile>  <!--\n')
-                fd.write('.. title: %s\n' % title)
-                fd.write('.. slug: %s\n' % slug)
-                fd.write('.. date: %s\n' % date)
-                fd.write('.. tags: %s\n' % tags)
-                fd.write('.. link: \n')
-                fd.write('.. description: \n')
+                for k, v in metadata.items():
+                    fd.write('.. {0}: {1}\n'.format(k, v))
                 fd.write('--></notextile>\n\n')
             fd.write("\nWrite your post here.")

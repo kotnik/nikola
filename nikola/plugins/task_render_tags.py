@@ -22,7 +22,7 @@
 # OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-#from __future__ import unicode_literals
+from __future__ import unicode_literals
 import codecs
 import json
 import os
@@ -42,7 +42,7 @@ class RenderTags(Task):
         kw = {
             "translations": self.site.config["TRANSLATIONS"],
             "blog_title": self.site.config["BLOG_TITLE"],
-            "blog_url": self.site.config["BLOG_URL"],
+            "site_url": self.site.config["SITE_URL"],
             "blog_description": self.site.config["BLOG_DESCRIPTION"],
             "messages": self.site.MESSAGES,
             "output_folder": self.site.config['OUTPUT_FOLDER'],
@@ -52,9 +52,12 @@ class RenderTags(Task):
             self.site.config['INDEX_DISPLAY_POST_COUNT'],
             "index_teasers": self.site.config['INDEX_TEASERS'],
             "rss_teasers": self.site.config["RSS_TEASERS"],
+            "hide_untranslated_posts": self.site.config['HIDE_UNTRANSLATED_POSTS'],
         }
 
         self.site.scan_posts()
+
+        yield self.list_tags_page(kw)
 
         if not self.site.posts_per_tag:
             yield {'basename': str(self.name), 'actions': []}
@@ -65,15 +68,17 @@ class RenderTags(Task):
             post_list.sort(key=lambda a: a.date)
             post_list.reverse()
             for lang in kw["translations"]:
-                yield self.tag_rss(tag, lang, posts, kw)
-
+                if kw["hide_untranslated_posts"]:
+                    filtered_posts = [x for x in post_list if x.is_translation_available(lang)]
+                else:
+                    filtered_posts = post_list
+                rss_post_list = [p.post_name for p in filtered_posts]
+                yield self.tag_rss(tag, lang, rss_post_list, kw)
                 # Render HTML
                 if kw['tag_pages_are_indexes']:
-                    yield self.tag_page_as_index(tag, lang, post_list, kw)
+                    yield self.tag_page_as_index(tag, lang, filtered_posts, kw)
                 else:
-                    yield self.tag_page_as_list(tag, lang, post_list, kw)
-
-        yield self.list_tags_page(kw)
+                    yield self.tag_page_as_list(tag, lang, filtered_posts, kw)
 
         # Tag cloud json file
         tag_cloud_data = {}
@@ -98,6 +103,7 @@ class RenderTags(Task):
         task['uptodate'] = [utils.config_changed(tag_cloud_data)]
         task['targets'] = [output_name]
         task['actions'] = [(write_tag_data, [tag_cloud_data])]
+        task['clean'] = True
         yield task
 
     def list_tags_page(self, kw):
@@ -110,7 +116,7 @@ class RenderTags(Task):
         for lang in kw["translations"]:
             output_name = os.path.join(
                 kw['output_folder'], self.site.path('tag_index', None, lang))
-            output_name = output_name.encode('utf8')
+            output_name = output_name
             context = {}
             context["title"] = kw["messages"][lang]["Tags"]
             context["items"] = [(tag, self.site.link("tag", tag, lang)) for tag
@@ -136,7 +142,7 @@ class RenderTags(Task):
             """Given tag, n, returns a page name."""
             name = self.site.path("tag", tag, lang)
             if i:
-                name = name.replace('.html', '-%s.html' % i)
+                name = name.replace('.html', '-{0}.html'.format(i))
             return name
 
         # FIXME: deduplicate this with render_indexes
@@ -152,12 +158,11 @@ class RenderTags(Task):
             # On a tag page, the feeds include the tag's feeds
             rss_link = ("""<link rel="alternate" type="application/rss+xml" """
                         """type="application/rss+xml" title="RSS for tag """
-                        """%s (%s)" href="%s">""" %
-                        (tag, lang, self.site.link("tag_rss", tag, lang)))
+                        """{0} ({1})" href="{2}">""".format(
+                            tag, lang, self.site.link("tag_rss", tag, lang)))
             context['rss_link'] = rss_link
-            output_name = os.path.join(kw['output_folder'], page_name(tag, i,
-                                                                      lang))
-            output_name = output_name.encode('utf8')
+            output_name = os.path.join(kw['output_folder'],
+                                       page_name(tag, i, lang))
             context["title"] = kw["messages"][lang][
                 "Posts about %s"] % tag
             context["prevlink"] = None
@@ -192,7 +197,6 @@ class RenderTags(Task):
         template_name = "tag.tmpl"
         output_name = os.path.join(kw['output_folder'], self.site.path(
             "tag", tag, lang))
-        output_name = output_name.encode('utf8')
         context = {}
         context["lang"] = lang
         context["title"] = kw["messages"][lang]["Posts about %s"] % tag
@@ -217,7 +221,6 @@ class RenderTags(Task):
         #Render RSS
         output_name = os.path.join(kw['output_folder'],
                                    self.site.path("tag_rss", tag, lang))
-        output_name = output_name.encode('utf8')
         deps = []
         post_list = [self.site.global_data[post] for post in posts if
                      self.site.global_data[post].use_in_feeds]
@@ -231,9 +234,10 @@ class RenderTags(Task):
             'file_dep': deps,
             'targets': [output_name],
             'actions': [(utils.generic_rss_renderer,
-                        (lang, "%s (%s)" % (kw["blog_title"], tag),
-                         kw["blog_url"], kw["blog_description"], post_list,
+                        (lang, "{0} ({1})".format(kw["blog_title"], tag),
+                         kw["site_url"], kw["blog_description"], post_list,
                          output_name, kw["rss_teasers"]))],
             'clean': True,
             'uptodate': [utils.config_changed(kw)],
+            'task_dep': ['render_posts'],
         }

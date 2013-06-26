@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # Copyright (c) 2012 Roberto Alsina y otros.
 
 # Permission is hereby granted, free of charge, to any
@@ -24,16 +25,16 @@
 
 """Utility functions."""
 
-from __future__ import print_function
+from __future__ import print_function, unicode_literals
 from collections import defaultdict, Callable
 import datetime
 import hashlib
+import locale
 import os
 import re
 import codecs
 import json
 import shutil
-import string
 import subprocess
 import sys
 from zipfile import ZipFile as zip
@@ -42,15 +43,20 @@ try:
 except ImportError:
     pass
 
+import pytz
+
 
 if sys.version_info[0] == 3:
     # Python 3
     bytes_str = bytes
     unicode_str = str
     unichr = chr
+    from imp import reload as _reload
 else:
     bytes_str = str
-    unicode_str = unicode
+    unicode_str = unicode  # NOQA
+    _reload = reload  # NOQA
+    unichr = unichr
 
 from doit import tools
 from unidecode import unidecode
@@ -58,9 +64,56 @@ from unidecode import unidecode
 import PyRSS2Gen as rss
 
 __all__ = ['get_theme_path', 'get_theme_chain', 'load_messages', 'copy_tree',
-           'generic_rss_renderer',
-           'copy_file', 'slugify', 'unslugify', 'get_meta', 'to_datetime',
-           'apply_filters', 'config_changed']
+           'generic_rss_renderer', 'copy_file', 'slugify', 'unslugify',
+           'to_datetime', 'apply_filters', 'config_changed', 'get_crumbs',
+           'get_tzname', 'get_asset_path', '_reload', 'unicode_str', 'bytes_str',
+           'unichr', 'Functionary', 'LocaleBorg', 'sys_encode', 'sys_decode']
+
+
+ENCODING = sys.getfilesystemencoding() or sys.stdin.encoding
+
+
+def sys_encode(thing):
+    """Return bytes encoded in the system's encoding."""
+    if isinstance(thing, unicode_str):
+        return thing.encode(ENCODING)
+    return thing
+
+
+def sys_decode(thing):
+    """Returns unicode."""
+    if isinstance(thing, bytes_str):
+        return thing.decode(ENCODING)
+    return thing
+
+
+class Functionary(defaultdict):
+
+    """Class that looks like a function, but is a defaultdict."""
+
+    def __init__(self, default, default_lang):
+        super(Functionary, self).__init__(default)
+        self.default_lang = default_lang
+
+    def current_lang(self):
+        """Guess the current language from locale or default."""
+        lang = locale.getlocale()[0]
+        if lang:
+            if lang in self.keys():
+                return lang
+            lang = lang.split('_')[0]
+            if lang in self.keys():
+                return lang
+        # whatever
+        return self.default_lang
+
+    def __call__(self, key, lang=None):
+        """When called as a function, take an optional lang
+        and return self[lang][key]."""
+
+        if lang is None:
+            lang = self.current_lang()
+        return self[lang][key]
 
 
 class CustomEncoder(json.JSONEncoder):
@@ -79,20 +132,20 @@ class config_changed(tools.config_changed):
         if isinstance(self.config, str):
             return self.config
         elif isinstance(self.config, dict):
-            data = json.dumps(self.config, cls=CustomEncoder)
+            data = json.dumps(self.config, cls=CustomEncoder, sort_keys=True)
             if isinstance(data, str):  # pragma: no cover # python3
                 byte_data = data.encode("utf-8")
             else:
                 byte_data = data
             return hashlib.md5(byte_data).hexdigest()
         else:
-            raise Exception(
-                ('Invalid type of config_changed parameter got %s' +
-                 ', must be string or dict') % (type(self.config),))
+            raise Exception('Invalid type of config_changed parameter -- got '
+                            '{0}, must be string or dict'.format(type(
+                                self.config)))
 
     def __repr__(self):
-        return "Change with config: %s" % json.dumps(
-            self.config, cls=CustomEncoder)
+        return "Change with config: {0}".format(json.dumps(self.config,
+                                                           cls=CustomEncoder))
 
 
 def get_theme_path(theme):
@@ -107,111 +160,7 @@ def get_theme_path(theme):
                             'data', 'themes', theme)
     if os.path.isdir(dir_name):
         return dir_name
-    raise Exception("Can't find theme '%s'" % theme)
-
-
-def re_meta(line, match):
-    """re.compile for meta"""
-    reStr = re.compile('^%s(.*)' % re.escape(match))
-    result = reStr.findall(line)
-    if result:
-        return result[0].strip()
-    else:
-        return ''
-
-
-def _get_metadata_from_filename_by_regex(filename, metadata_regexp):
-    """
-    Tries to ried the metadata from the filename based on the given re.
-    This requires to use symbolic group names in the pattern.
-
-    The part to read the metadata from the filename based on a regular
-    expression is taken from Pelican - pelican/readers.py
-    """
-    title = slug = date = tags = link = description = ''
-    match = re.match(metadata_regexp, filename)
-    if match:
-        # .items() for py3k compat.
-        for key, value in match.groupdict().items():
-            key = key.lower()  # metadata must be lowercase
-
-            if key == 'title':
-                title = value
-            if key == 'slug':
-                slug = value
-            if key == 'date':
-                date = value
-            if key == 'tags':
-                tags = value
-            if key == 'link':
-                link = value
-            if key == 'description':
-                description = value
-
-    return (title, slug, date, tags, link, description)
-
-
-def _get_metadata_from_file(source_path, title='', slug='', date='', tags='',
-                            link='', description=''):
-    re_md_title = re.compile(r'^%s([^%s].*)' %
-                            (re.escape('#'), re.escape('#')))
-    # Assuming rst titles are going to be at least 4 chars long
-    # otherwise this detects things like ''' wich breaks other markups.
-    re_rst_title = re.compile(r'^([%s]{4,})' % re.escape(string.punctuation))
-
-    with codecs.open(source_path, "r", "utf8") as meta_file:
-        meta_data = meta_file.readlines(15)
-
-    for i, meta in enumerate(meta_data):
-        if not title:
-            title = re_meta(meta, '.. title:')
-        if not title:
-            if re_rst_title.findall(meta) and i > 0:
-                title = meta_data[i - 1].strip()
-        if not title:
-            if re_md_title.findall(meta):
-                title = re_md_title.findall(meta)[0]
-        if not slug:
-            slug = re_meta(meta, '.. slug:')
-        if not date:
-            date = re_meta(meta, '.. date:')
-        if not tags:
-            tags = re_meta(meta, '.. tags:')
-        if not link:
-            link = re_meta(meta, '.. link:')
-        if not description:
-            description = re_meta(meta, '.. description:')
-
-    return (title, slug, date, tags, link, description)
-
-
-def get_meta(source_path, file_metadata_regexp=None):
-    """Get post's meta from source.
-
-    If ``file_metadata_regexp`` ist given it will be tried to read
-    metadata from the filename.
-    If any metadata is then found inside the file the metadata from the
-    file will override previous findings.
-    """
-    title = slug = date = tags = link = description = ''
-
-    if not (file_metadata_regexp is None):
-        (title, slug, date, tags, link,
-         description) = _get_metadata_from_filename_by_regex(
-             source_path, file_metadata_regexp)
-
-    (title, slug, date, tags, link, description) = _get_metadata_from_file(
-        source_path, title, slug, date, tags, link, description)
-
-    if not slug:
-        # If no slug is found in the metadata use the filename
-        slug = slugify(os.path.splitext(os.path.basename(source_path))[0])
-
-    if not title:
-        # If no title is found, use the filename without extension
-        title = os.path.splitext(os.path.basename(source_path))[0]
-
-    return (title, slug, date, tags, link, description)
+    raise Exception("Can't find theme '{0}'".format(theme))
 
 
 def get_template_engine(themes):
@@ -244,17 +193,19 @@ def get_theme_chain(theme):
     return themes
 
 
-def load_messages(themes, translations):
+def load_messages(themes, translations, default_lang):
     """ Load theme's messages into context.
 
     All the messages from parent themes are loaded,
     and "younger" themes have priority.
     """
-    messages = defaultdict(dict)
+    messages = Functionary(dict, default_lang)
     warned = []
     oldpath = sys.path[:]
     for theme_name in themes[::-1]:
         msg_folder = os.path.join(get_theme_path(theme_name), 'messages')
+        default_folder = os.path.join(get_theme_path('default'), 'messages')
+        sys.path.insert(0, default_folder)
         sys.path.insert(0, msg_folder)
         english = __import__('messages_en')
         for lang in list(translations.keys()):
@@ -265,8 +216,8 @@ def load_messages(themes, translations):
                 sorted(english.MESSAGES.keys()) and \
                     lang not in warned:
                 # FIXME: get real logging in place
-                print("Warning: Incomplete translation for language '%s'." %
-                      lang)
+                print("Warning: Incomplete translation for language "
+                      "'{0}'.".format(lang))
                 warned.append(lang)
             messages[lang].update(english.MESSAGES)
             messages[lang].update(translation.MESSAGES)
@@ -323,7 +274,10 @@ def generic_rss_renderer(lang, title, link, description, timeline, output_path,
             'link': post.permalink(lang, absolute=True),
             'description': post.text(lang, teaser_only=rss_teasers),
             'guid': post.permalink(lang, absolute=True),
-            'pubDate': post.date,
+            # PyRSS2Gen's pubDate is GMT time.
+            'pubDate': (post.date if post.date.tzinfo is None else
+                        post.date.astimezone(pytz.timezone('UTC'))),
+            'categories': post._tags.get(lang, []),
         }
         items.append(rss.RSSItem(**args))
     rss_obj = rss.RSS2(
@@ -384,7 +338,19 @@ def slugify(value):
     and converts spaces to hyphens.
 
     From Django's "django/template/defaultfilters.py".
+
+    >>> print(slugify('\xe1\xe9\xed.\xf3\xfa'))
+    aeiou
+
+    >>> print(slugify('foo/bar'))
+    foobar
+
+    >>> print(slugify('foo bar'))
+    foo-bar
+
     """
+    if not isinstance(value, unicode_str):
+        raise ValueError("Not a unicode object: {0}".format(value))
     value = unidecode(value)
     # WARNING: this may not be python2/3 equivalent
     # value = unicode(_slugify_strip_re.sub('', value).strip().lower())
@@ -416,22 +382,23 @@ def extract_all(zipfile):
         namelist = z.namelist()
         for f in namelist:
             if f.endswith('/') and '..' in f:
-                raise UnsafeZipException(
-                    'The zip file contains ".." and is not safe to expand.')
+                raise UnsafeZipException('The zip file contains ".." and is '
+                                         'not safe to expand.')
         for f in namelist:
             if f.endswith('/'):
                 if not os.path.isdir(f):
                     try:
                         os.makedirs(f)
                     except:
-                        raise OSError("mkdir '%s' error!" % f)
+                        raise OSError("Failed making {0} directory "
+                                      "tree!".format(f))
             else:
                 z.extract(f)
     os.chdir(pwd)
 
 
 # From https://github.com/lepture/liquidluck/blob/develop/liquidluck/utils.py
-def to_datetime(value):
+def to_datetime(value, tzinfo=None):
     if isinstance(value, datetime.datetime):
         return value
     supported_formats = [
@@ -449,10 +416,49 @@ def to_datetime(value):
     ]
     for format in supported_formats:
         try:
-            return datetime.datetime.strptime(value, format)
+            dt = datetime.datetime.strptime(value, format)
+            if tzinfo is None:
+                return dt
+            # Build a localized time by using a given timezone.
+            return tzinfo.localize(dt)
         except ValueError:
             pass
-    raise ValueError('Unrecognized date/time: %r' % value)
+    # So, let's try dateutil
+    try:
+        from dateutil import parser
+        dt = parser.parse(value)
+        if tzinfo is None or dt.tzinfo:
+            return dt
+        return tzinfo.localize(dt)
+    except ImportError:
+        raise ValueError('Unrecognized date/time: {0!r}, try installing dateutil...'.format(value))
+    raise ValueError('Unrecognized date/time: {0!r}'.format(value))
+
+
+def get_tzname(dt):
+    """
+    Give a datetime value, find the name of the timezone
+    """
+    try:
+        from dateutil import tz
+    except ImportError:
+        raise ValueError('Unrecognized date/time: {0!r}, try installing dateutil...'.format(dt))
+
+    tzoffset = dt.strftime('%z')
+    for name in pytz.common_timezones:
+        timezone = tz.gettz(name)
+        now = dt.now(timezone)
+        offset = now.strftime('%z')
+        if offset == tzoffset:
+            return name
+    raise ValueError('Unrecognized date/time: {0!r}'.format(dt))
+
+
+def current_time(tzinfo=None):
+    dt = datetime.datetime.now()
+    if tzinfo is not None:
+        dt = tzinfo.localize(dt)
+    return dt
 
 
 def apply_filters(task, filters):
@@ -468,7 +474,7 @@ def apply_filters(task, filters):
             if isinstance(key, (tuple, list)):
                 if ext in key:
                     return value
-            elif isinstance(key, (str, bytes)):
+            elif isinstance(key, (bytes_str, unicode_str)):
                 if ext == key:
                     return value
             else:
@@ -488,3 +494,96 @@ def apply_filters(task, filters):
 
                 task['actions'].append((unlessLink, (action, target)))
     return task
+
+
+def get_crumbs(path, is_file=False):
+    """Create proper links for a crumb bar.
+
+    >>> crumbs = get_crumbs('galleries')
+    >>> len(crumbs)
+    1
+    >>> print('|'.join(crumbs[0]))
+    #|galleries
+
+    >>> crumbs = get_crumbs(os.path.join('galleries','demo'))
+    >>> len(crumbs)
+    2
+    >>> print('|'.join(crumbs[0]))
+    ..|galleries
+    >>> print('|'.join(crumbs[1]))
+    #|demo
+
+    >>> crumbs = get_crumbs(os.path.join('listings','foo','bar'), is_file=True)
+    >>> len(crumbs)
+    3
+    >>> print('|'.join(crumbs[0]))
+    ..|listings
+    >>> print('|'.join(crumbs[1]))
+    .|foo
+    >>> print('|'.join(crumbs[2]))
+    #|bar
+    """
+
+    crumbs = path.split(os.sep)
+    _crumbs = []
+    if is_file:
+        for i, crumb in enumerate(crumbs[-3::-1]):  # Up to parent folder only
+            _path = '/'.join(['..'] * (i + 1))
+            _crumbs.append([_path, crumb])
+        _crumbs.insert(0, ['.', crumbs[-2]])  # file's folder
+        _crumbs.insert(0, ['#', crumbs[-1]])  # file itself
+    else:
+        for i, crumb in enumerate(crumbs[::-1]):
+            _path = '/'.join(['..'] * i) or '#'
+            _crumbs.append([_path, crumb])
+    return list(reversed(_crumbs))
+
+
+def get_asset_path(path, themes, files_folders={'files': ''}):
+    """Checks which theme provides the path with the given asset,
+    and returns the "real" path to the asset, relative to the
+    current directory.
+
+    If the asset is not provided by a theme, then it will be checked for
+    in the FILES_FOLDERS
+
+    >>> print(get_asset_path('assets/css/rst.css', ['site', 'default']))
+    nikola/data/themes/default/assets/css/rst.css
+
+    >>> print(get_asset_path('assets/css/theme.css', ['site', 'default']))
+    nikola/data/themes/site/assets/css/theme.css
+
+    >>> print(get_asset_path('nikola.py', ['site', 'default'], {'nikola': ''}))
+    nikola/nikola.py
+
+    >>> print(get_asset_path('nikola/nikola.py', ['site', 'default'],
+    ... {'nikola':'nikola'}))
+    nikola/nikola.py
+
+    """
+    for theme_name in themes:
+        candidate = os.path.join(
+            get_theme_path(theme_name),
+            path
+        )
+        if os.path.isfile(candidate):
+            return os.path.relpath(candidate, sys_decode(os.getcwd()))
+    for src, rel_dst in files_folders.items():
+        candidate = os.path.join(
+            src,
+            os.path.relpath(path, rel_dst)
+        )
+        if os.path.isfile(candidate):
+            return os.path.relpath(candidate, sys_decode(os.getcwd()))
+
+    # whatever!
+    return None
+
+
+class LocaleBorg:
+    __shared_state = {
+        'current_lang': None
+    }
+
+    def __init__(self):
+        self.__dict__ = self.__shared_state

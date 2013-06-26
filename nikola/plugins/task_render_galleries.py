@@ -62,6 +62,7 @@ class Galleries(Task):
             'default_lang': self.site.config['DEFAULT_LANG'],
             'blog_description': self.site.config['BLOG_DESCRIPTION'],
             'use_filename_as_title': self.site.config['USE_FILENAME_AS_TITLE'],
+            'gallery_path': self.site.config['GALLERY_PATH']
         }
 
         # FIXME: lots of work is done even when images don't change,
@@ -70,7 +71,7 @@ class Galleries(Task):
         template_name = "gallery.tmpl"
 
         gallery_list = []
-        for root, dirs, files in os.walk('galleries'):
+        for root, dirs, files in os.walk(kw['gallery_path']):
             gallery_list.append(root)
         if not gallery_list:
             yield {
@@ -91,10 +92,11 @@ class Galleries(Task):
             output_gallery = os.path.dirname(os.path.join(
                 kw["output_folder"], self.site.path("gallery", gallery_name,
                                                     None)))
+            output_name = os.path.join(output_gallery, self.site.config['INDEX_FILE'])
             if not os.path.isdir(output_gallery):
                 yield {
                     'basename': str('render_galleries'),
-                    'name': str(output_gallery),
+                    'name': output_gallery,
                     'actions': [(os.makedirs, (output_gallery,))],
                     'targets': [output_gallery],
                     'clean': True,
@@ -126,21 +128,15 @@ class Galleries(Task):
                 pass
 
             # List of sub-galleries
-            folder_list = [x.split(os.sep)[-2] + os.sep for x in
+            folder_list = [x.split(os.sep)[-2] for x in
                            glob.glob(os.path.join(gallery_path, '*') + os.sep)]
 
-            crumbs = gallery_path.split(os.sep)[:-1]
-            crumbs.append(os.path.basename(gallery_name))
-            # TODO: write this in human
-            paths = ['/'.join(['..'] * (len(crumbs) - 1 - i)) for i in
-                     range(len(crumbs[:-1]))] + ['#']
-            crumbs = list(zip(paths, crumbs))
+            crumbs = utils.get_crumbs(gallery_path)
 
             image_list = [x for x in image_list if "thumbnail" not in x]
             # Sort by date
             image_list.sort(key=lambda a: self.image_date(a))
             image_name_list = [os.path.basename(x) for x in image_list]
-
             thumbs = []
             # Do thumbnails and copy originals
             for img, img_name in list(zip(image_list, image_name_list)):
@@ -157,7 +153,7 @@ class Galleries(Task):
                 thumbs.append(os.path.basename(thumb_path))
                 yield {
                     'basename': str('render_galleries'),
-                    'name': thumb_path.encode('utf8'),
+                    'name': thumb_path,
                     'file_dep': [img],
                     'targets': [thumb_path],
                     'actions': [
@@ -169,7 +165,7 @@ class Galleries(Task):
                 }
                 yield {
                     'basename': str('render_galleries'),
-                    'name': orig_dest_path.encode('utf8'),
+                    'name': orig_dest_path,
                     'file_dep': [img],
                     'targets': [orig_dest_path],
                     'actions': [
@@ -191,8 +187,8 @@ class Galleries(Task):
                         output_gallery, ".thumbnail".join([fname, ext]))
                     excluded_dest_path = os.path.join(output_gallery, img_name)
                     yield {
-                        'basename': str('render_galleries'),
-                        'name': excluded_thumb_dest_path.encode('utf8'),
+                        'basename': str('render_galleries_clean'),
+                        'name': excluded_thumb_dest_path,
                         'file_dep': [exclude_path],
                         #'targets': [excluded_thumb_dest_path],
                         'actions': [
@@ -202,8 +198,8 @@ class Galleries(Task):
                         'uptodate': [utils.config_changed(kw)],
                     }
                     yield {
-                        'basename': str('render_galleries'),
-                        'name': excluded_dest_path.encode('utf8'),
+                        'basename': str('render_galleries_clean'),
+                        'name': excluded_dest_path,
                         'file_dep': [exclude_path],
                         #'targets': [excluded_dest_path],
                         'actions': [
@@ -213,15 +209,14 @@ class Galleries(Task):
                         'uptodate': [utils.config_changed(kw)],
                     }
 
-            output_name = os.path.join(output_gallery, "index.html")
             context = {}
             context["lang"] = kw["default_lang"]
             context["title"] = os.path.basename(gallery_path)
             context["description"] = kw["blog_description"]
             if kw['use_filename_as_title']:
-                img_titles = ['id="%s" alt="%s" title="%s"' %
-                              (fn[:-4], fn[:-4], utils.unslugify(fn[:-4]))
-                              for fn in image_name_list]
+                img_titles = ['id="{0}" alt="{1}" title="{2}"'.format(
+                    fn[:-4], fn[:-4], utils.unslugify(fn[:-4])) for fn
+                    in image_name_list]
             else:
                 img_titles = [''] * len(image_name_list)
             context["images"] = list(zip(image_name_list, thumbs, img_titles))
@@ -243,13 +238,13 @@ class Galleries(Task):
                 str(hashlib.sha224(index_path.encode('utf-8')).hexdigest() +
                     '.html'))
             if os.path.exists(index_path):
-                compile_html = self.site.get_compiler(index_path)
+                compile_html = self.site.get_compiler(index_path).compile_html
                 yield {
                     'basename': str('render_galleries'),
-                    'name': index_dst_path.encode('utf-8'),
+                    'name': index_dst_path,
                     'file_dep': [index_path],
                     'targets': [index_dst_path],
-                    'actions': [(compile_html, [index_path, index_dst_path])],
+                    'actions': [(compile_html, [index_path, index_dst_path, True])],
                     'clean': True,
                     'uptodate': [utils.config_changed(kw)],
                 }
@@ -264,12 +259,11 @@ class Galleries(Task):
                     file_dep.append(index_dst_path)
                 else:
                     context['text'] = ''
-                self.site.render_template(template_name, output_name.encode(
-                    'utf8'), context)
+                self.site.render_template(template_name, output_name, context)
 
             yield {
                 'basename': str('render_galleries'),
-                'name': output_name.encode('utf8'),
+                'name': output_name,
                 'file_dep': file_dep,
                 'targets': [output_name],
                 'actions': [(render_gallery, (output_name, context,
@@ -309,8 +303,13 @@ class Galleries(Task):
 
                         break
 
-            im.thumbnail(size, Image.ANTIALIAS)
-            im.save(dst)
+            try:
+                im.thumbnail(size, Image.ANTIALIAS)
+            except Exception:
+                # TODO: inform the user, but do not fail
+                pass
+            else:
+                im.save(dst)
 
         else:
             utils.copy_file(src, dst)

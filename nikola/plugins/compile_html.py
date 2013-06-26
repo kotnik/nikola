@@ -22,7 +22,7 @@
 # OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-"""Implementation of compile_html based on markdown."""
+"""Implementation of compile_html for HTML source files."""
 
 import os
 import shutil
@@ -36,26 +36,25 @@ class CompileHtml(PageCompiler):
 
     name = "html"
 
-    def compile_html(self, source, dest):
+    def compile_html(self, source, dest, is_two_file=True):
         try:
             os.makedirs(os.path.dirname(dest))
         except Exception:
             pass
         shutil.copyfile(source, dest)
+        return True
 
-    def create_post(self, path, onefile=False, title="", slug="",
-                    date="", tags=""):
+    def create_post(self, path, onefile=False, **kw):
+        metadata = {}
+        metadata.update(self.default_metadata)
+        metadata.update(kw)
         d_name = os.path.dirname(path)
         if not os.path.isdir(d_name):
             os.makedirs(os.path.dirname(path))
         with codecs.open(path, "wb+", "utf8") as fd:
             if onefile:
                 fd.write('<!-- \n')
-                fd.write('.. title: %s\n' % title)
-                fd.write('.. slug: %s\n' % slug)
-                fd.write('.. date: %s\n' % date)
-                fd.write('.. tags: %s\n' % tags)
-                fd.write('.. link: \n')
-                fd.write('.. description: \n')
+                for k, v in metadata.items():
+                    fd.write('.. {0}: {1}\n'.format(k, v))
                 fd.write('-->\n\n')
             fd.write("\n<p>Write your post here.</p>")
