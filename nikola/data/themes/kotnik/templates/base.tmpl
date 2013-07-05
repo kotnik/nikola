@@ -6,7 +6,11 @@
     <meta charset="utf-8">
     <meta name="description" content="${description}" >
     <meta name="author" content="${blog_author}">
+    %if title:
     <title>${title} | ${blog_title}</title>
+    %else:
+    <title>${blog_title}</title>
+    %endif
     <!-- Le styles -->
     <link href="/assets/css/rst.css" rel="stylesheet" type="text/css">
     <link href="/assets/css/theme.css" rel="stylesheet" type="text/css"/>
