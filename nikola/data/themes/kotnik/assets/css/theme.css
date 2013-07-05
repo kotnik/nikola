@@ -104,6 +104,11 @@ div.body {
     clear: both;
 }
 
+/**
+ *
+ * Footer.
+ *
+ */
 div.footer {
     border-top: 1px solid #555;
     padding-top: 9px;
@@ -115,6 +120,11 @@ div.footer {
 
 div.footer p {
     margin: 0;
+}
+
+div.footer a {
+    color: #555;
+    font-weight: 300;
 }
 
 /**
@@ -151,7 +161,7 @@ h1 + p.date  {
 
 /**
  *
- * Margins.
+ * Code.
  *
  */
 pre, code, tt {
