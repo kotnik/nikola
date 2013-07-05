@@ -69,12 +69,15 @@ class Indexes(Task):
             for i, post_list in enumerate(lists):
                 context = {}
                 indexes_title = kw['indexes_title'] or kw['blog_title']
-                if kw["indexes_pages"]:
-                    indexes_pages = kw["indexes_pages"] % i
+                if i == 0:
+                    context["title"] = ""
                 else:
-                    indexes_pages = " (" + \
-                        kw["messages"][lang]["old posts page %d"] % i + ")"
-                context["title"] = indexes_title + indexes_pages
+                    if kw["indexes_pages"]:
+                        indexes_pages = kw["indexes_pages"] % i
+                    else:
+                        indexes_pages = " (" + \
+                            kw["messages"][lang]["old posts page %d"] % i + ")"
+                    context["title"] = indexes_title + indexes_pages
                 context["prevlink"] = None
                 context["nextlink"] = None
                 context['index_teasers'] = kw['index_teasers']
