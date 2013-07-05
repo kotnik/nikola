@@ -132,7 +132,7 @@ div.footer a {
  * Margins.
  *
  */
-p, div.line-block, ul, ol, pre, table {
+p, div.line-block, ul, ol, pre {
     margin: 25px 0 25px 0;
 }
 
@@ -164,9 +164,10 @@ h1 + p.date  {
  * Code.
  *
  */
-pre, code, tt {
+pre, code, tt, .gist {
     font-family: 'Ubuntu Mono', 'Consolas', 'Deja Vu Sans Mono', 'Bitstream Vera Sans Mono', 'Monaco', 'Courier New';
     font-size: 0.9em;
+    line-height: normal;
 }
 
 pre {
@@ -185,14 +186,12 @@ code, tt {
  *
  */
 table {
-    border: 1px solid #ddd;
     border-collapse: collapse;
     background: #fafafa;
 }
 
 td, th {
     padding: 2px 12px;
-    border: 1px solid #ddd;
 }
 
 /**
