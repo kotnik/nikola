@@ -12,7 +12,7 @@
  *
  */
 body {
-    font: 17px/25px 'Merriweather', serif;
+    font: 15px/25px 'Merriweather', serif;
     margin: 0;
     padding: 0;
     font-weight: 300;
@@ -113,7 +113,7 @@ div.footer {
     border-top: 1px solid #555;
     padding-top: 9px;
     margin-top: 42px;
-    font-size: 16px;
+    font-size: 12px;
     text-align: center;
     color: #555;
 }
