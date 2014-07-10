@@ -347,6 +347,7 @@ class Post(object):
                     self.permalink(lang), teaser_str)
                 # This closes all open tags and sanitizes the broken HTML
                 document = lxml.html.fromstring(teaser)
+                document.make_links_absolute(self.permalink(lang=lang))
                 data = lxml.html.tostring(document, encoding='unicode')
 
         if data and strip_html:
