@@ -46,11 +46,12 @@
         <ul>
             %for url, text in sidebar_links[lang]:
                 % if rel_link(permalink, url) == "#":
-                    <li class="active"><a href="${url}">${text}</a>
+                    <li class="active"><a href="${url}">${text}</a></li>
                 %else:
-                    <li><a href="${url}">${text}</a>
+                    <li><a href="${url}">${text}</a></li>
                 %endif
             %endfor
+        <li><a href="/rss.xml">RSS</a></li>
         </ul>
       </div>
 
