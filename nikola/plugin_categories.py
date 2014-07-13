@@ -96,7 +96,7 @@ DoitCommand.help = help
 
 
 class BaseTask(BasePlugin):
-    """PLugins of this type are task generators."""
+    """Plugins of this type are task generators."""
 
     name = "dummy_task"
 
@@ -110,7 +110,7 @@ class BaseTask(BasePlugin):
 
 
 class Task(BaseTask):
-    """PLugins of this type are task generators."""
+    """Plugins of this type are task generators."""
 
 
 class LateTask(BaseTask):

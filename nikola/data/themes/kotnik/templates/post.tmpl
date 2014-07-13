@@ -3,14 +3,18 @@
 <%inherit file="base.tmpl"/>
 <%block name="content">
     <div class="postbox">
-    ${helper.html_title()}
-    <hr>
-    <small>
-        ${messages[lang]["Posted"]}: ${post.date.strftime(date_format)}
-        ${helper.html_translations(post)}
-        ${helper.html_tags(post)}
-    </small>
-    <hr>
-    ${post.text(lang)}
+        ${helper.html_title()}
+        <hr>
+        <small>
+            ${messages[lang]["Posted"]}: ${post.date.strftime(date_format)}
+            ${helper.html_translations(post)}
+            ${helper.html_tags(post)}
+        </small>
+
+        <hr>
+        ${post.text(lang)}
+    </div>
+    <div class="github-edit">
+        If you found an error, please <a href="${github_url}/${post.path_in_repo}">click here and fix it</a>.
     </div>
 </%block>

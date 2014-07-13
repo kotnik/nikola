@@ -8,9 +8,9 @@
     <meta name="description" content="${description}" >
     <meta name="author" content="${blog_author}">
     %if title:
-    <title>${title}</title>
+    <title>${title} | ${blog_title}</title>
     %else:
-    <title>${blog_title} blog</title>
+    <title>${blog_title}</title>
     %endif
     <!-- Le styles -->
     <link href="/assets/css/rst.css" rel="stylesheet" type="text/css">
@@ -46,12 +46,11 @@
         <ul>
             %for url, text in sidebar_links[lang]:
                 % if rel_link(permalink, url) == "#":
-                    <li class="active"><a href="${url}">${text}</a></li>
+                    <li class="active"><a href="${url}">${text}</a>
                 %else:
-                    <li><a href="${url}">${text}</a></li>
+                    <li><a href="${url}">${text}</a>
                 %endif
             %endfor
-        <li><a href="/rss.xml">RSS</a></li>
         </ul>
       </div>
 
