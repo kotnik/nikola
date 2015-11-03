@@ -48,7 +48,6 @@ class CopyAssets(Task):
             "code_color_scheme": self.site.config['CODE_COLOR_SCHEME'],
         }
         flag = True
-        has_code_css = False
         tasks = {}
         code_css_path = os.path.join(kw['output_folder'], 'assets', 'css', 'code.css')
         for theme_name in kw['themes']:
@@ -57,8 +56,6 @@ class CopyAssets(Task):
             for task in utils.copy_tree(src, dst):
                 if task['name'] in tasks:
                     continue
-                if task['targets'][0] == code_css_path:
-                    has_code_css = True
                 tasks[task['name']] = task
                 task['uptodate'] = [utils.config_changed(kw)]
                 task['basename'] = self.name
@@ -72,26 +69,3 @@ class CopyAssets(Task):
                 'uptodate': [True],
                 'actions': [],
             }
-
-        if not has_code_css:  # Generate it
-
-            def create_code_css():
-                from pygments.formatters import get_formatter_by_name
-                formatter = get_formatter_by_name('html', style=kw["code_color_scheme"])
-                try:
-                    os.makedirs(os.path.dirname(code_css_path))
-                except:
-                    pass
-                with codecs.open(code_css_path, 'wb+', 'utf8') as outf:
-                    outf.write(formatter.get_style_defs('.code'))
-                    outf.write("table.codetable { width: 100%;} td.linenos {text-align: right; width: 4em;}")
-
-            task = {
-                'basename': self.name,
-                'name': code_css_path,
-                'targets': [code_css_path],
-                'uptodate': [utils.config_changed(kw)],
-                'actions': [(create_code_css, [])],
-                'clean': True,
-            }
-            yield utils.apply_filters(task, kw['filters'])
