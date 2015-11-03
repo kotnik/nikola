@@ -24,7 +24,6 @@
 
 import codecs
 import os
-
 from nikola.plugin_categories import Task
 from nikola import utils
 
@@ -49,7 +48,6 @@ class CopyAssets(Task):
         }
         flag = True
         tasks = {}
-        code_css_path = os.path.join(kw['output_folder'], 'assets', 'css', 'code.css')
         for theme_name in kw['themes']:
             src = os.path.join(utils.get_theme_path(theme_name), 'assets')
             dst = os.path.join(kw['output_folder'], 'assets')
