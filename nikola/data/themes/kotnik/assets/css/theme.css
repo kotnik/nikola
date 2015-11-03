@@ -312,3 +312,8 @@ div.pagination strong {
 span.math img {
     margin-bottom: -7px;
 }
+
+div.github-edit {
+    margin: 36px 0px;
+    font-size: 15px;
+}
