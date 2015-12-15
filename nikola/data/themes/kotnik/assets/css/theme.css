@@ -174,13 +174,16 @@ pre, code, tt, .gist {
 pre {
     line-height: 1.3;
     background: none;
-    padding: 0;
+    padding: 10px;
 }
 
 code, tt {
     background: #eee;
 }
 
+div.code {
+    background: #eee;
+}
 /**
  *
  * Tables.
